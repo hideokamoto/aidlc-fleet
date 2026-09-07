@@ -1,0 +1,20 @@
+{
+  "stage": "domain-design",
+  "note": "requirements-analysis and user-stories are both SKIP in this workflow's approved grid, so no requirements.md or stories.md exists. upstream_ids are the intent-backlog.md item IDs (scope-definition/intent-backlog.md) — the closest stable identifiers this workflow produced upstream of domain-design.",
+  "upstream_ids": ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "S1", "S2", "S3", "C1", "C2"],
+  "coverage": [
+    { "id": "M1", "status": "OK", "target": "EngineInstaller" },
+    { "id": "M2", "status": "OK", "target": "SuccessVerifier" },
+    { "id": "M3", "status": "OK", "target": "VersionGate" },
+    { "id": "M4", "status": "OK", "target": "FileOwnershipGuard" },
+    { "id": "M5", "status": "OK", "target": "EngineInstaller" },
+    { "id": "M6", "status": "OK", "target": "DriftDetector" },
+    { "id": "M7", "status": "OK", "target": "SuccessVerifier" },
+    { "id": "M8", "status": "OK", "target": "CommandLayer" },
+    { "id": "S1", "status": "OK", "target": "PluginManager" },
+    { "id": "S2", "status": "OK", "target": "PluginManager" },
+    { "id": "S3", "status": "OK", "target": "DriftDetector" },
+    { "id": "C1", "status": "OK", "target": "LockfileStore" },
+    { "id": "C2", "status": "GAP", "target": "Unattended-mode (AIDLC_UNATTENDED=1) recognition is a cross-cutting CommandLayer flag read, not new business logic; deferred to Functional Design for the exact command-by-command behavior spec" }
+  ]
+}
