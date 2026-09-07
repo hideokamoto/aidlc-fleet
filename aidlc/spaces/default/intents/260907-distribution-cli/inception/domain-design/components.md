@@ -384,3 +384,38 @@ graph TD
 | DriftDetector | Distinct concern (read-only three-way comparison for `check`/`status`) with its own exit-code classification logic (0/1/2), separable from `CommandLayer`'s pure routing role and from `VersionGate`'s update-time gate decision — comparing "what is" (drift) is a different question from "may this proceed" (the gate) |
 
 **Alternatives Rejected**: folding `EngineInstaller` and `PluginManager` into one `Installer` component was considered, since both share the ChannelClient→FileOwnershipGuard→SuccessVerifier dependency chain. Rejected because they have different triggers (init/update vs. plugin add/remove), different version-mixing rules (P6 applies only to plugins), and different lifecycles (engine install rarely repeats; plugin add/remove is expected to happen often) — folding them would create one component with two unrelated change reasons, violating "two concepts that change for different reasons belong in different components." Folding `DriftDetector`'s comparison logic into `CommandLayer` (the original R-01 shape) was also considered and rejected: `CommandLayer` is mandated to stay a pure routing/exit-code layer per the team's layer-separation rule, and burying the three-way comparison there would leave the CLI's second-most-invoked command (`check`) with no independently testable component, unlike every other piece of core logic in this catalogue.
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-07T23:34:30Z
+**Iteration:** 1
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| R-01 | Critical | aidlc/spaces/default/intents/260907-distribution-cli/inception/domain-design/components.md > component catalogue (M6/S3/C1 ownership) | `DriftDetector` now exists as a ninth component owning M6 (`check`) and the S3 drift portion, with symmetric `depends_on`/`dependents` edges to/from `LockfileStore` and `ChannelClient`; `Lockfile` gained a `pin` attribute owned by `LockfileStore`; `traceability.json` C1 now targets `LockfileStore`, M6 and S3 target `DriftDetector`; `VersionGate`'s behaviour text documents pin-override precedence; the summary table, entity table, and rationale table are all updated. Verified against the current file content. | None — resolved. | Resolved |
+| R-02 | Major | aidlc/spaces/default/intents/260907-distribution-cli/inception/domain-design/decisions.md > ADR-002, ADR-003 | Both ADRs now carry a second "Alternatives Rejected" option (ADR-002 Alternative 2 — shared `StateSnapshot`; ADR-003 Alternative 2 — deliberate cycle), each with pros/cons, satisfying the phase's ≥2-alternatives requirement. | None — resolved. | Resolved |
+| R-03 | Minor | aidlc/spaces/default/intents/260907-distribution-cli/inception/domain-design/traceability.json > C2 coverage entry | `status` changed from the non-standard `"Deferred"` to `"GAP"`, keeping the explanatory note in `target`. | None — resolved. | Resolved |
+| R-04 | Minor | aidlc/spaces/default/intents/260907-distribution-cli/inception/domain-design/components.md > Component Diagram (mermaid) | The stage rule requires "one labelled edge per `depends_on`" in the mermaid diagram. `DriftDetector`'s own outbound edges (`DriftDetector --> LockfileStore`, `DriftDetector --> ChannelClient`) were added, but the inbound edge `CommandLayer --> DriftDetector` — present in the YAML catalogue (`CommandLayer.depends_on` includes `DriftDetector`) and in the Component Summary table — is missing from the diagram, so the diagram under-represents the YAML source of truth by one edge. | Add `CommandLayer --> DriftDetector` to the mermaid graph so every `depends_on` edge in the YAML catalogue has a corresponding diagram edge. | New |
+
+### Validation Tool Results
+
+No validation tools were listed as available for this stage beyond manual well-formedness checking; the following was verified by hand against the YAML catalogue in `components.md`:
+
+| Check | Result | Interpretation |
+|---|---|---|
+| Unique component names (9 components) | PASS | No duplicates |
+| `depends_on`/`dependents` symmetry across all 9 components | PASS | Every edge has a matching reverse entry, including all new `DriftDetector` edges |
+| No self-dependency | PASS | No component lists itself |
+| Acyclic dependency graph | PASS | Topological order exists: {LockfileStore, ChannelClient, FileOwnershipGuard} → SuccessVerifier → VersionGate → {DriftDetector, EngineInstaller, PluginManager} → CommandLayer |
+| Single entity ownership | PASS | `Lockfile` owned only by `LockfileStore`, `Channel` owned only by `ChannelClient`; `DriftDetector` owns no entities |
+| Entity capture depth (ownership + shape only) | PASS | `Lockfile`/`Channel` list identifier/attributes/references only, no types or cardinality |
+| Mermaid diagram vs. YAML `depends_on` completeness | FAIL | `CommandLayer --> DriftDetector` missing (R-04) |
+| `traceability.json` coverage vs. intent-backlog.md IDs | PASS | All 13 IDs (M1–M8, S1–S3, C1–C2) present; targets resolve to declared components |
+
+### Summary
+
+All three prior findings are genuinely fixed against the current file contents: `DriftDetector` is a well-formed, symmetric ninth component with real ownership of M6/S3, the `pin` field closes C1's persistence gap, both flagged ADRs now document two rejected alternatives, and the non-standard traceability status is gone. One new, non-blocking gap surfaced during re-verification: the human-readable mermaid diagram omits the `CommandLayer --> DriftDetector` edge that the YAML catalogue and summary table both declare. This is a documentation-consistency issue, not a structural one — the YAML (the stated source of truth) is complete and correct — so it does not block readiness.
