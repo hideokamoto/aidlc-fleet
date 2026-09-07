@@ -107,11 +107,10 @@ matches the intended product boundary as already approved. [scope]
 
 ## Assumptions & Open Questions
 
-- Unknown (open question) [assumption]: whether "downstream projects" ever
-  represent distinct human stakeholders (e.g. separate team owners per
-  project) rather than the same operator across multiple repos — the
-  document's §11 "未決事項" leaves personal-vs-team distribution unresolved
-  and defers it to a future decision. (carried from `stakeholder-map.md`)
+None. (The prior open assumption — whether "downstream projects" ever
+represent distinct human stakeholders rather than the same operator across
+multiple repos — was confirmed accepted below via the
+`## Assumption Confirmation` checkpoint.)
 
 ## Assumption Confirmation
 
