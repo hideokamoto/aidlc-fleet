@@ -65,21 +65,21 @@ None.
 
 ## Review
 
-**Verdict:** NOT-READY
+**Verdict:** READY
 **Reviewer:** aidlc-product-lead-agent
-**Date:** 2026-09-07T14:19:22Z
+**Date:** 2026-09-07T14:47:00Z
 **Iteration:** 1
+**Request Challenge:** review:c8d1950aeeb13c06d5fccb1ad2a82935
 
 ### Findings
 
 | ID | Severity | Location | Finding | Required action | Status |
 |---|---|---|---|---|---|
-| R-01 | Critical | intent-statement.md > Initial Scope Signal, bullet 1 | 「ARS 45/100」というスコアと、除外された9ステージの具体リスト（market-research, feasibility, team-formation, mockups, user-stories, units-generation, delivery-planning, infrastructure-design, および全Operationフェーズステージ）およびその除外理由（"internal dev-tooling CLI with an already-complete requirements document and no deployment/operational surface of its own"）は、`intent-capture-questions.md` のいずれの Q&A にも、`[desc]`/`[scope]`/`[memory:M<n>]` のどの許可ソースにも見当たらない。Q8 は15ステージの含有リストと「承認済み」という事実のみを確認しており、ARSスコアや除外理由の根拠にはなっていない。ステージ定義のgrounding contract（許可ソースは [desc], confirmed [Q<n>], [scope], [memory:M<n>] のみ）に違反する未ソースの事実主張。 | ARSスコアと除外ステージの理由付けの記述を削除するか、実際に許可された情報源（例えば `[scope]` タグで裏付けられる実際のスコープファイルの内容）から出典を明示する。Q8で確認された「15/33ステージ、ARS/理由は言及なし」の範囲に記述を絞る。 | Resolved |
-| R-02 | Critical | stakeholder-map.md > Assumptions & Open Questions（intent-capture-questions.md 全体） | `stakeholder-map.md` の `## Assumptions & Open Questions` は `None.` ではなく、未解決の assumption（downstream projectsが別人格のstakeholderかどうか）を1件含んでいる。ステージ定義 Step 5 により、両artifactのAssumptions欄が両方とも `None.` でない限り `## Assumption Confirmation` セクションを `intent-capture-questions.md` に作成し、`A. Accept assumptions` / `B. Convert to follow-up questions` の選択を人間に提示しなければならないが、`intent-capture-questions.md` にはそのセクションが存在せず、人間の確認を経ないまま完了扱いになっている。 | `intent-capture-questions.md` に `## Assumption Confirmation` セクションを追加し、当該assumptionについて人間の確認（Accept / Convert to follow-up）を得てから、必要であれば両artifactを改訂し、レビューをやり直す。 | Resolved |
-| R-03 | Major | intent-statement.md > Problem Statement | 段落は `[Q1] [Q3]` のみでタグ付けされているが、「Naive file-copy engine upgrades corrupt already-composed plugin surfaces」という主張は `intent-capture-questions.md` の Q2 回答（"naive file copy corrupts composed plugin surfaces (E3)"）に由来しており、Q2由来の内容にQ2タグが付いていない。ソーストレーサビリティが不正確。 | 当該文に `[Q2]` タグを追加し、出典を正確に反映する。 | Resolved |
+| R-01 | Critical | intent-statement.md > Initial Scope Signal | Unsourced ARS score and exclusion rationale asserted alongside the [Q8]-sourced scope confirmation | Trim to only [Q8]/[scope]-sourced claims | Resolved |
+| R-02 | Critical | stakeholder-map.md / intent-capture-questions.md | Unresolved assumption bypassed the required Assumption Confirmation gate | Run the gate, obtain human confirmation, propagate to both artifacts | Resolved |
+| R-03 | Major | intent-statement.md > Problem Statement | Q2-sourced sentence lacked a [Q2] tag | Add [Q2] tag | Resolved |
+| R-04 | Minor | intent-statement.md > Initiative Trigger | Detail tagged [Q4] only, but content is drawn from [desc] | Add [desc] tag alongside [Q4] | Resolved |
 
 ### Summary
 
-問題定義・顧客・成功指標・トリガーの各セクションはQ&Aへのトレーサビリティが概ね良好で、削除された `git submodule` の却下や四部構成の成功基準など、要件文書の重要な制約を正確に反映している点は評価できる。しかし Initial Scope Signal に含まれる ARS スコアと除外ステージの理由付けが完全に未ソースであり（R-01）、さらに stakeholder-map.md に残った未解決 assumption がステージ定義で必須の Assumption Confirmation ゲートを経ずに素通りしている（R-02）。この2件のCriticalは、開発者がこの成果物だけを見て「スコープが正確にどう決まったか」「未解決事項について人間が本当に合意したか」を検証できない状態を作っており、承認ゲートに進む前に対処が必要。
-
-**Post-review fixes applied (see audit trail for DECISION_RECORDED/QUESTION_ANSWERED evidence):** R-01 — Initial Scope Signal trimmed to only the `[Q8]`/`[scope]`-sourced 15-stage list and confirmed-boundary claim, ARS score and exclusion rationale removed. R-02 — `## Assumption Confirmation` added to `intent-capture-questions.md`, human answered "A. Accept assumptions", `stakeholder-map.md` and this file's Assumptions sections updated to `None.` accordingly. R-03 — `[Q2]` tag added to the naive file-copy corruption sentence.
+All three prior Critical/Major findings (plus one self-identified Minor) are verified resolved against the current file contents: the Initial Scope Signal now states only [Q8]/[scope]-sourced facts, the Assumption Confirmation gate was run with the human answering "A. Accept assumptions" and both `stakeholder-map.md` and `intent-capture-questions.md` reflect `None.` accordingly, the Q2-sourced sentence carries `[Q2]`, and the Initiative Trigger sentence carries `[desc]` alongside `[Q4]`. No new unsourced claims or missing required sections were found. Ready to proceed to the approval gate.
