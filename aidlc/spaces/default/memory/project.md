@@ -52,12 +52,53 @@
 <!-- Format: NEVER [behavior] (affirmed [date]) -->
 <!-- Example: NEVER throw exceptions across service layer boundaries (affirmed 2026-05-17) -->
 
+- NEVER シンボリックリンクへの書き込みを行わない — ファイル所有権 invariant (affirmed 2026-09-07)
+（v0.1 §7）に違反する操作として、いかなる状況でも許可しない。 (affirmed 2026-09-07)
+- NEVER レシート（管理対象ファイル一覧）外のファイルを自動削除しない。 (affirmed 2026-09-07)
+- NEVER バージョンゲート（v0.1 §4）の migration-boundary 判定をバイパスして (affirmed 2026-09-07)
+既存インストールを変更しない。 (affirmed 2026-09-07)
+- NEVER ファイル所有権 invariant 違反を警告のみで処理し、処理を継続しない (affirmed 2026-09-07)
+（fail fast — 違反を検知したら即座に失敗させる）。 (affirmed 2026-09-07)
+- NEVER `aidlc.lock.json` やチャネル設定ファイルに認証情報・APIキー等の秘密 (affirmed 2026-09-07)
+情報をハードコードしない。 (affirmed 2026-09-07)
+- NEVER upstream（`awslabs/aidlc-workflows`）のファイルを変更しない。 (affirmed 2026-09-07)
+- NEVER `aidlc/` ワークスペース状態を読み書きしない（初期メモリシード複製を (affirmed 2026-09-07)
+除く）。 (affirmed 2026-09-07)
+- NEVER upstream の plugin-compose ロジックを再実装しない。 (affirmed 2026-09-07)
 ## Mandated
 
 <!-- Populated by practices-discovery affirmation gate. -->
 <!-- Format: ALWAYS [behavior] (affirmed [date]) -->
 <!-- Example: ALWAYS use Result<T,E> for fallible operations in service layer (affirmed 2026-05-17) -->
 
+- ALWAYS `init` はバージョンゲート（v0.1 §4, origin-record version gate）を (affirmed 2026-09-07)
+経由してから既存インストールへの変更を行う。reject/manual/none の (affirmed 2026-09-07)
+migration-boundary 判定と `--acknowledge-migration` の相互作用は、いかなる (affirmed 2026-09-07)
+コマンドパスでもバイパスしてはならない。 (affirmed 2026-09-07)
+- ALWAYS ファイル所有権 invariant（v0.1 §7）を、engine が書き込みを行うすべ (affirmed 2026-09-07)
+ての操作（`init`/`update`/`plugin add|remove` 等）で検証する — engine 所有 (affirmed 2026-09-07)
+ディレクトリへの変更は `--force` とバックアップを伴わせ、settings/hooks は (affirmed 2026-09-07)
+定義済みのマージ規則に従ってマージする。 (affirmed 2026-09-07)
+- ALWAYS `aidlc/` ワークスペース配下は不可侵として扱う（初期メモリシードの (affirmed 2026-09-07)
+複製処理を除く）。 (affirmed 2026-09-07)
+- ALWAYS 四条件成功判定契約（v0.1 §6, M2）とファイル所有権 invariant（M4）の (affirmed 2026-09-07)
+リスクが集中するロジックについては、実装前にテスト（TDD）を書き、失敗する (affirmed 2026-09-07)
+ことを確認してから実装する。 (affirmed 2026-09-07)
+- ALWAYS M4（ファイル所有権 invariant）は実ファイルシステムに対する統合テス (affirmed 2026-09-07)
+ト（一時ディレクトリでの実際の書き込み・マージ・削除の検証）で検証する — (affirmed 2026-09-07)
+モックのみのテストで代替してはならない。 (affirmed 2026-09-07)
+- ALWAYS exit-code 契約（v0.1 §8, M8）を全コマンド（`init`/`update`/`check`/ (affirmed 2026-09-07)
+`plugin add|remove`/`pin|unpin`/`status`/`doctor`）で一貫して守る。 (affirmed 2026-09-07)
+- ALWAYS コマンド層 / コアロジック層（バージョンゲート・成功判定ロジック）/ (affirmed 2026-09-07)
+ファイルシステム I/O 層を分離した実装構成にする。 (affirmed 2026-09-07)
+- ALWAYS CircleCI パイプラインに、シークレットスキャン（例: gitleaks, (affirmed 2026-09-07)
+GitHub Secret Scanning, TruffleHog 等）を必須ステップとして組み込む。 (affirmed 2026-09-07)
+- ALWAYS CircleCI パイプラインに、依存関係スキャン（例: Dependabot または (affirmed 2026-09-07)
+同等のツール）を必須ステップとして組み込む。 (affirmed 2026-09-07)
+- ALWAYS プルリクエストごとに CircleCI で lint + typecheck + test を実行し、 (affirmed 2026-09-07)
+グリーンであることをマージの条件とする。 (affirmed 2026-09-07)
+- ALWAYS `main` へのマージ後、npm への公開の前に CircleCI ワークフロー上の (affirmed 2026-09-07)
+手動承認ステップを経る。 (affirmed 2026-09-07)
 ## Corrections
 
 <!-- Project-specific corrections from human feedback. -->

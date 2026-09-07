@@ -1,9 +1,10 @@
-# Team-Level Rules
+# チーム実践 — 確定版（インタビュー確定済み）
 
-> This team's affirmed practices and corrections. Loaded after `org.md` as
-> strict-additive guidance; contradictions with broader policy are rejected.
-> Populated by the practices-discovery affirmation gate. Edit at the gate,
-> not directly.
+> このファイルは Practices Discovery ステージの最終成果物です。以下の各項目
+> は、ドラフト・3件の支援エージェント（quality/developer/devsecops）による
+> レビュー・人間インタビューでの確定回答を統合した、確定したチームの実践で
+> す。本ファイルの内容は `aidlc/spaces/default/memory/team.md` の対応する見出
+> しへ昇格されます。
 
 ## Way of Working
 
@@ -37,6 +38,17 @@ Bolt 1（Walking Skeleton）は solo かつゲート付きで実行し、人間�
 
 （インタビュー Q2 で確定。ドラフトの「skeleton: off 相当」という暫定解釈は
 人間の確認により **on** へ上書きされました。）
+
+## Construction Autonomy Mode
+
+**全 Bolt をゲートします**（自律継続ではなく、各 Bolt の完了ごとに明示的な
+go/no-go チェックを人間に求めます）。
+
+このプロジェクトが触れるファイル所有権 invariant（M4）とバージョンゲート
+（M3）のリスク面の大きさ（devsecops レビュー参照）を踏まえ、各 Bolt の完了時
+に必ず確認ポイントを設けます。
+
+（インタビュー Q3 で確定。）
 
 ## Testing Posture
 
@@ -110,14 +122,3 @@ CircleCI の承認ワークフローステップとして具体化する。
 必須事項として採用した。
 
 （インタビュー Q6 で確定。）
-## Forbidden
-
-<!-- Team-specific forbidden patterns -->
-
-## Mandated
-
-<!-- Team-specific mandates -->
-
-## Corrections
-
-<!-- Self-learning loop appends here. -->
