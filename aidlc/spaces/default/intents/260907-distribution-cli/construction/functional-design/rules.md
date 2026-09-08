@@ -108,11 +108,11 @@ rules:
     source: M4 / practices-discovery discovered-rules.md (Mandated, fail-fast)
 
   - id: BR3.1
-    statement: Success requires all four parts of the criterion to hold together — no single check is sufficient alone.
+    statement: Success requires all three boolean checks of the criterion to hold together — no single check is sufficient alone. A plugin-sync exit 1 (BR3.3) is a separate classification layered on top, not a fourth boolean conjunct.
     category: validation
     applies_to: SuccessVerifier
     trigger: after any engine or plugin placement
-    logic: "IF (compose exited 0) AND (no [degraded] line in the relevant .drops file) AND (doctor failed-count minus known_failures == 0) AND (a plugin-sync exit 1 is classified as incomplete, not failure) THEN success ELSE not success"
+    logic: "IF (compose exited 0) AND (no [degraded] line in the relevant .drops file) AND (doctor failed-count minus known_failures == 0) THEN success ELSE not success; independently, if the placement was a plugin sync, apply BR3.3 to reclassify a plugin-sync exit 1 as incomplete rather than failure"
     violation_behaviour: the failing part(s) are reported to the human; the command's own exit code reflects failure per M8
     source: M2 / v0.1 §6 (the document's own most-emphasized section)
 
@@ -231,7 +231,7 @@ rules:
 | BR2.4 | FileOwnershipGuard | constraint | no write through a symlink |
 | BR2.5 | FileOwnershipGuard | constraint | no receipt-external auto-delete |
 | BR2.6 | FileOwnershipGuard | policy | fail fast on any invariant violation |
-| BR3.1 | SuccessVerifier | validation | four-part success criterion, combined |
+| BR3.1 | SuccessVerifier | validation | three-part boolean success criterion (BR3.3 layered on top) |
 | BR3.2 | SuccessVerifier | validation | compose exit 0 alone is insufficient |
 | BR3.3 | SuccessVerifier | calculation | plugin-sync exit 1 = incomplete, not failure |
 | BR3.4 | SuccessVerifier | calculation | doctor failures filtered by `known_failures` |

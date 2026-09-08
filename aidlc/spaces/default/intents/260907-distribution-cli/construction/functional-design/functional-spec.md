@@ -7,6 +7,15 @@ carries two derived views for readability: an entity-relationship diagram
 (derived from `entities.md`) and a rules summary (derived from
 `rules.md`).
 
+Note on `components.md`'s `CommandLayer → FileOwnershipGuard` edge
+("invoke invariant checks around any mutating command"): none of the
+workflows below has `CommandLayer` invoke `FileOwnershipGuard` directly —
+every actual invocation flows through `EngineInstaller` or
+`PluginManager` (both of which have their own approved edges to
+`FileOwnershipGuard`). This satisfies the declared dependency
+indirectly, not literally; it is called out once here so it does not
+need re-litigating per workflow below.
+
 ## Command Workflows
 
 ### `init`
@@ -29,9 +38,13 @@ carries two derived views for readability: an entity-relationship diagram
    (see State Machine below).
 9. If `--adopt` was passed, `LockfileStore` records the adoption marker
    consumed later by BR1.5.
-10. `CommandLayer` maps the outcome to an exit code (0 success / 1
-    partial-success-with-known-issues / 2 failure, per the exit-code
-    contract, M8).
+10. `CommandLayer` maps the outcome to an exit code per the canonical
+    0/1/2/3/4 contract (`intent-statement.md`, v0.1 §8, M8): `0` on
+    success; `4` if `SuccessVerifier`'s four-part criterion (BR3.1) fails
+    (compose degraded / engine install incomplete). Codes `1`/`2` are
+    drift-comparison outcomes (BR5.2) and `3` is a version-gate rejection
+    (BR1.1/BR1.2) — neither applies to `init`, which performs no drift
+    comparison and no gate check.
 
 ### `update`
 
@@ -50,7 +63,13 @@ carries two derived views for readability: an entity-relationship diagram
    steps mirror `init` steps 5–8 (invariant checks, placement, recompose,
    four-part verification), but this is a Lockfile **update** transition,
    not creation.
-8. `CommandLayer` maps the outcome to an exit code (M8).
+8. `CommandLayer` maps the outcome to an exit code per the canonical
+   0/1/2/3/4 contract (M8): `0` on success; `3` if `VersionGate` rejects
+   the transition (BR1.1 reject boundary, BR1.2 manual boundary without
+   `--acknowledge-migration`, or BR1.5's adoption precondition unmet); `4`
+   if the gate passes but `SuccessVerifier`'s four-part criterion (BR3.1)
+   subsequently fails. Codes `1`/`2` (drift outcomes, BR5.2) do not apply
+   to `update`.
 
 ### `check`
 
@@ -70,9 +89,11 @@ carries two derived views for readability: an entity-relationship diagram
 
 1. `CommandLayer` parses argv; validates the plugin name against the
    channel's declared `plugins[]`.
-2. `CommandLayer` invokes `ChannelClient` to fetch the plugin's projection
-   tarball; sha256-verified (BR7.1).
-3. `CommandLayer` invokes `PluginManager`.
+2. `CommandLayer` invokes `PluginManager`.
+3. `PluginManager` invokes `ChannelClient` to fetch the plugin's
+   projection tarball; sha256-verified (BR7.1) — per `components.md`'s
+   approved `PluginManager → ChannelClient` edge ("fetch plugin
+   projections"), not a `CommandLayer → ChannelClient` call.
 4. `PluginManager` checks for an existing projection of this plugin; if
    one exists, removes it completely before placing the new one (BR4.1 —
    never mix versions).
@@ -86,7 +107,10 @@ carries two derived views for readability: an entity-relationship diagram
    BR3.3 plugin-sync-exit-1 classification).
 9. `PluginManager` writes `plugins[]` and `engine_version_at_compose` via
    `LockfileStore` — a Lockfile **update** transition.
-10. `CommandLayer` maps the outcome to an exit code (M8).
+10. `CommandLayer` maps the outcome to an exit code per the canonical
+    0/1/2/3/4 contract (M8): `0` on success; `4` if BR3.1's four-part
+    criterion fails. No `VersionGate` involvement, so `3` does not apply;
+    `1`/`2` (drift outcomes) do not apply either.
 
 ### `plugin remove <name>`
 
@@ -103,7 +127,10 @@ carries two derived views for readability: an entity-relationship diagram
 6. `PluginManager` invokes `SuccessVerifier`.
 7. `PluginManager` writes the updated `plugins[]` via `LockfileStore` —
    Lockfile **update** transition.
-8. `CommandLayer` maps the outcome to an exit code (M8).
+8. `CommandLayer` maps the outcome to an exit code per the canonical
+   0/1/2/3/4 contract (M8): `0` on success; `4` if BR3.1's four-part
+   criterion fails. No `VersionGate` involvement, so `3` does not apply;
+   `1`/`2` (drift outcomes) do not apply either.
 
 ### `pin <ref>` / `unpin`
 
@@ -152,17 +179,25 @@ stateDiagram-v2
     Initialized --> PluginModified: plugin add/remove succeeds (BR4.1, BR3.1)
     Updated --> PluginModified: plugin add/remove succeeds
     PluginModified --> PluginModified: plugin add/remove succeeds again
-    Initialized --> Pinned: pin succeeds (BR6.1)
-    Updated --> Pinned: pin succeeds
-    PluginModified --> Pinned: pin succeeds
-    Pinned --> Pinned: update/plugin succeeds while pin remains set
-    Pinned --> Initialized: unpin succeeds (BR6.1, pin cleared)
+    Initialized --> Initialized: pin/unpin succeeds (BR6.1 — pin field only)
+    Updated --> Updated: pin/unpin succeeds (BR6.1 — pin field only)
+    PluginModified --> PluginModified: pin/unpin succeeds (BR6.1 — pin field only)
 ```
 
 Note: `Absent` is not a Lockfile *instance* state — it is the precondition
 `init` requires and every other command's BR8.1 hard-failure trigger.
 `check`, `status`, and `doctor` are read-only and never move the Lockfile
 between these states; they are omitted from the diagram as non-transitions.
+`pin`/`unpin` are modeled as self-transitions on whichever of
+`Initialized`/`Updated`/`PluginModified` the project is currently in, not
+as a separate `Pinned` state: per BR6.1, pin/unpin touches only the `pin`
+field and leaves `engine_origin`, `engine`, and `plugins[]` — the fields
+that actually distinguish these three states — untouched. An earlier
+version of this diagram routed every `unpin` back to `Initialized`
+regardless of prior state, silently erasing `Updated`/`PluginModified`
+history that BR6.1 never asked to erase; this revision fixes that.
+Whether the pin override is currently set is a Lockfile *attribute*
+(`pin: string | null`, per `entities.md`), not a distinct lifecycle state.
 
 ## Entity-Relationship Diagram (derived from entities.md)
 
@@ -197,12 +232,11 @@ other.
 
 ## Rules Summary (derived from rules.md)
 
-23 rules across 8 owning components: VersionGate (5), FileOwnershipGuard
+23 rules across 7 owning components: VersionGate (5), FileOwnershipGuard
 (6), SuccessVerifier (4), PluginManager (1), DriftDetector (3),
-LockfileStore (2, including the `pin` rule BR6.1 and the `AI8.1`... see
-`rules.md` for the full table), ChannelClient (2). See `rules.md`'s Rules
-Summary table for the complete, authoritative list — this is a pointer,
-not a duplicate.
+LockfileStore (2, the `pin` rule BR6.1 and BR8.1), ChannelClient (2). See
+`rules.md`'s Rules Summary table for the complete, authoritative list —
+this is a pointer, not a duplicate.
 
 ## Edge Cases and Error Handling
 
@@ -230,3 +264,64 @@ not a duplicate.
 |----------|--------|
 | Concurrent-invocation file locking for `aidlc.lock.json` | Code Generation |
 | Atomic/transactional write semantics for Lockfile writes under interruption | Code Generation |
+
+## Revision Note (post iteration-1 NOT-READY)
+
+Per the architecture reviewer's iteration-1 findings (R-01 Critical,
+R-02/R-03/R-04 Major, R-05/R-06/R-07/R-08 Minor):
+
+- **R-01 fix**: every command's exit-code mapping now uses the canonical
+  0/1/2/3/4 contract from `intent-statement.md` — `3` for VersionGate
+  rejection, `4` for a SuccessVerifier four-part-criterion failure — in
+  place of the invented "partial-success/failure" 1/2 gloss.
+- **R-02 fix**: `plugin add`'s tarball fetch now happens inside the
+  `PluginManager` invocation, matching `components.md`'s approved
+  `PluginManager → ChannelClient` edge, not `CommandLayer → ChannelClient`.
+- **R-03 fix**: the Lockfile state machine models `pin`/`unpin` as
+  self-transitions on the current state (per BR6.1's narrow "pin field
+  only" effect) instead of routing every `unpin` back to `Initialized`.
+- **R-04 fix**: `rules.md`'s BR3.1 `logic` is now a genuine 3-predicate
+  boolean AND; BR3.3's plugin-sync classification is cross-referenced
+  separately rather than folded in as an unimplementable fourth conjunct.
+- **R-05 fix**: added a note that `CommandLayer → FileOwnershipGuard` is
+  satisfied indirectly (via `EngineInstaller`/`PluginManager`), not by a
+  direct call in any workflow.
+- **R-06 fix**: corrected "8 owning components" to "7" in the Rules Summary.
+- **R-07 fix**: corrected the garbled `AI8.1` rule ID to `BR8.1`.
+- **R-08 fix**: `traceability.json`'s M5 coverage now targets
+  `BR1.1, BR1.2, BR1.3, BR1.5` instead of just `BR1.1`.
+
+## Review
+
+**Verdict:** READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Date:** 2026-09-08T14:59:08Z
+**Iteration:** 2
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| R-01 | Critical | functional-spec.md > exit-code mapping, all command workflows | Re-derived the canonical exit-code contract from `intent-statement.md` (`0`=in sync, `1`=behind channel, `2`=local mod drift, `3`=version-gate rejection, `4`=compose degraded/install incomplete) and confirmed every workflow's mapping (init/update/check/plugin add/plugin remove/pin/unpin/status/doctor) now uses exactly this contract with no invented codes. | None — resolved. | Resolved |
+| R-02 | Major | functional-spec.md > `plugin add` workflow step 3 | Confirmed `components.md` line 328 declares `PluginManager --> ChannelClient` and `PluginManager`'s `depends_on` includes `ChannelClient`; the workflow now invokes the fetch from inside `PluginManager`, matching the approved edge — no `CommandLayer --> ChannelClient` call remains in this workflow. | None — resolved. | Resolved |
+| R-03 | Major | functional-spec.md > Lockfile State Machine | Confirmed `rules.md` BR6.1 scopes pin/unpin to the `pin` field only ("pin persists a per-project override into the Lockfile; unpin clears it"); the diagram now models pin/unpin as self-transitions on `Initialized`/`Updated`/`PluginModified` instead of routing `unpin` back to `Initialized`, so `Updated`/`PluginModified` history is no longer silently erased. | None — resolved. | Resolved |
+| R-04 | Major | rules.md > BR3.1 `logic` field | BR3.1's logic is now a genuine 3-predicate boolean AND (compose exit 0 AND no `[degraded]` line AND doctor-count-minus-known-failures == 0); BR3.3's plugin-sync-exit-1 reclassification is cross-referenced as a separate, independently-applied rule rather than ANDed in as an unimplementable fourth boolean conjunct. | None — resolved. | Resolved |
+| R-05 | Minor | functional-spec.md > header note (lines 10-17) | `components.md`'s `CommandLayer --> FileOwnershipGuard` edge is still never exercised directly in any workflow, but the spec now states this explicitly and explains the edge is satisfied indirectly via `EngineInstaller`/`PluginManager` (both of which have their own approved edges to `FileOwnershipGuard`), so the gap is no longer silent. | None — resolved. | Resolved |
+| R-06 | Minor | functional-spec.md > Rules Summary | Recounted `rules.md`: VersionGate(5)+FileOwnershipGuard(6)+SuccessVerifier(4)+PluginManager(1)+DriftDetector(3)+LockfileStore(2)+ChannelClient(2) = 23 rules across 7 components, matching the corrected text. | None — resolved. | Resolved |
+| R-07 | Minor | functional-spec.md > Lockfile State Machine note | The garbled `AI8.1` reference is now correctly `BR8.1`, matching `rules.md`'s actual rule ID. | None — resolved. | Resolved |
+| R-08 | Minor | traceability.json > coverage[M5] | Cross-checked `intent-backlog.md`: M5 is "`update`, gated by M3" and M3 (the version gate) covers BR1.1-BR1.5. `traceability.json` now targets `BR1.1, BR1.2, BR1.3, BR1.5` for M5 (the update-time gating rules), a materially fuller citation than the prior BR1.1-only target. | None — resolved. | Resolved |
+
+No new defects were found on a fresh scan of the edited sections (mermaid `stateDiagram-v2` and `erDiagram` blocks both parse cleanly; the exit-code prose is internally consistent across all seven command workflows; `entities.md`'s `Lockfile.pin` attribute and `rules.md`'s BR6.1/BR8.1 wording were re-checked against the revised text and agree).
+
+### Validation Tool Results
+
+| Tool | Result | Interpretation |
+|---|---|---|
+| Manual cross-reference: exit-code contract vs. intent-statement.md v0.1 §8 | PASS | All workflows map to 0/1/2/3/4 exactly as specified; no invented codes remain |
+| Manual cross-reference: components.md depends_on/dependents edges vs. functional-spec.md workflow steps | PASS | Every component-to-component call in every workflow matches a declared edge in components.md |
+| Manual cross-reference: rules.md BR6.1/BR3.1/BR8.1 vs. functional-spec.md and rules.md prose | PASS | State machine, boolean logic, and rule-ID reference all agree with rules.md's actual text |
+| Manual cross-reference: traceability.json M5 vs. intent-backlog.md M3/M5 | PASS | M5 target is a defensible subset of M3's gating rules (BR1.1/1.2/1.3/1.5) |
+
+### Summary
+
+All eight iteration-1 findings are verified fixed against the current file contents and the same upstream artifacts (`intent-statement.md`, `components.md`, `rules.md`, `intent-backlog.md`) used in the prior review; no new defects were introduced by the edits. The design is implementable as written.
