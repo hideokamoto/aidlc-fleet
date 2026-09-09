@@ -18,11 +18,11 @@ invent new infrastructure boundaries.
 
 | Component | Failure domain | Blast radius | NFR patterns applied here |
 |---|---|---|---|
-| CommandLayer | This invocation only | This one command's exit code / stdout-stderr output | NFR5.1/5.2 (observability), NFR4.2/4.3 (boundary fail-fast) |
-| LockfileStore | This project's `aidlc.lock.json` | This project's install state | NFR4.1 (atomic write) |
+| CommandLayer | This invocation only | This one command's exit code / stdout-stderr output | NFR5.1/5.2 (observability) |
+| LockfileStore | This project's `aidlc.lock.json` | This project's install state | NFR4.1 (atomic write), NFR4.2 (absent/malformed classification on load) |
 | ChannelClient | This invocation's network call | This one command's fetch/verify outcome | NFR1.1 (performance budget), NFR2.4/2.6 (integrity, pinning) |
 | VersionGate | This invocation's update decision | This one `update` command's proceed/reject outcome | — (pure decision logic, no NFR pattern of its own beyond correctness) |
-| FileOwnershipGuard | Any mutating write in this invocation | The specific path being written | NFR4.4 (backup-before-replace) |
+| FileOwnershipGuard | Any mutating write in this invocation | The specific path being written | NFR4.3 (fail-fast invariant check at write time, BR2.6), NFR4.4 (backup-before-replace) |
 | EngineInstaller | This project's engine directory | This project's engine install state | NFR4.4 (backup), NFR1.1 (budget) |
 | PluginManager | This project's plugin projections | This project's plugin set + sessionStart hook | NFR3.1 (linear-time comparison), NFR1.1 (budget) |
 | SuccessVerifier | This invocation's success evaluation | The four-part verdict for this one command | NFR4.6 (plugin-sync-incomplete classification), NFR5.3/5.5 (doctor wrap) |

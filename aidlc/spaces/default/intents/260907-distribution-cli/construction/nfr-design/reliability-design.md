@@ -26,16 +26,37 @@ just a stale temp file that the next successful write overwrites. The
 concrete rename-and-fsync mechanics are a Code Generation implementation
 detail; this stage fixes the pattern itself as the design solution.
 
-## Design Solution: NFR4.2 / NFR4.3 (missing/malformed lockfile, fail-fast invariant enforcement)
+## Design Solution: NFR4.2 (missing/malformed lockfile)
 
-No additional pattern beyond what `rules.md` already specifies:
-`CommandLayer` enforces both checks **at the command-entry boundary**,
-before dispatching to any owning component (BR8.1 for missing/malformed
-lockfile classification, BR2.6 for the fail-fast invariant). This placement
-decision — boundary check before dispatch, not scattered per-component
-checks — keeps the fail-fast Mandated rule (`project.md`) enforceable in
-one place rather than duplicated across `EngineInstaller`, `PluginManager`,
-and `FileOwnershipGuard`.
+`rules.md` attributes BR8.1 to `LockfileStore`, not `CommandLayer`
+(`BR8.1.applies_to: LockfileStore`, triggered whenever any command other
+than `init` reads the Lockfile). The design solution: `LockfileStore`
+itself classifies "absent" vs. "fails to parse" as distinct fatal cases
+whenever it is asked to load `aidlc.lock.json` outside `init`, and raises
+that classification back to `CommandLayer`, which maps it to the
+non-zero exit and the "run init" guidance (`violation_behaviour`).
+`CommandLayer` invokes the load and dispatches on the result — it does
+not itself inspect the file or decide absent/malformed — keeping the same
+routing-only role `NFR4.3` (below) establishes for `CommandLayer`.
+
+## Design Solution: NFR4.3 (fail-fast invariant enforcement)
+
+`rules.md` attributes BR2.6 to `FileOwnershipGuard`, not `CommandLayer`
+(`BR2.6.applies_to: FileOwnershipGuard`, triggered when any of BR2.1–BR2.5
+detects a violation) — consistent with `components.md`'s description of
+`CommandLayer` as containing "no business logic of its own — a pure
+routing/exit-code layer" and `FileOwnershipGuard` as the component that
+owns "fail-fast enforcement on any invariant violation." The design
+solution is therefore: `CommandLayer` invokes `FileOwnershipGuard` around
+each mutating operation (as `components.md`'s dependency edge already
+states — "invoke invariant checks around any mutating command"), and
+`FileOwnershipGuard` performs the fail-fast check **at the point of
+writing**, not at argv-parse time, because a BR2.1–BR2.5-class violation
+(e.g. attempting to write through a symlink, or outside the receipt) can
+only be detected once `EngineInstaller`/`PluginManager` actually attempt
+the write it guards. This keeps the team's Mandated layer-separation rule
+intact: `CommandLayer` stays a pure routing layer, and invariant/gate
+logic stays in the core-logic layer (`FileOwnershipGuard`).
 
 ## Design Solution: NFR4.4 (engine-directory backup)
 
@@ -85,8 +106,8 @@ classification of an already-completed operation's outcome.
 | ID | Design solution | Status |
 |---|---|---|
 | NFR4.1 | write-temp + fsync + atomic rename | Designed |
-| NFR4.2 | `CommandLayer` boundary check (BR8.1) | Designed (no new pattern needed) |
-| NFR4.3 | `CommandLayer` boundary check (BR2.6) | Designed (no new pattern needed) |
+| NFR4.2 | `LockfileStore` classifies absent/malformed on load, `CommandLayer` maps result to exit code (BR8.1) | Designed (no new pattern needed) |
+| NFR4.3 | `FileOwnershipGuard` at-write-time check, invoked by `CommandLayer` around each mutating operation (BR2.6) | Designed (no new pattern needed) |
 | NFR4.4 | copy-before-replace backup | Designed |
 | NFR4.5 | — | Open gap (no requirement authorizes a design) |
 | NFR4.6 | `SuccessVerifier` classification (BR3.3) | Designed (no new pattern needed) |
