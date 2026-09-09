@@ -1,8 +1,5 @@
 version: 2.1
 
-orbs:
-  node: circleci/node@5.2.0
-
 executors:
   bun-executor:
     docker:
@@ -61,7 +58,12 @@ jobs:
       - run:
           name: Install gitleaks
           command: |
-            curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.4_linux_x64.tar.gz -o gitleaks.tar.gz
+            # Pinned to a specific release tag (not /latest/download/) so the
+            # asset filename always matches what's actually published — the
+            # /latest/ alias breaks this pinned-version filename as soon as
+            # gitleaks cuts a new release. Bump both the tag and filename
+            # together when upgrading.
+            curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz -o gitleaks.tar.gz
             tar -xzf gitleaks.tar.gz gitleaks
             chmod +x gitleaks
       - run:
