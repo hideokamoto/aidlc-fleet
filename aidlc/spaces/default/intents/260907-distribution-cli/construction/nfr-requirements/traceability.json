@@ -1,0 +1,17 @@
+{
+  "stage": "nfr-requirements",
+  "note": "requirements-analysis and units-generation are both SKIP in this workflow's approved grid, so no requirements.md exists and no inception NFR{n} IDs were minted upstream. This stage mints its own top-level NFR{n} category IDs (NFR1 Performance through NFR6 Tech Stack), the same situation Functional Design faced for BRx.y IDs. There is no per-unit directory (single implicit unit).",
+  "unit": null,
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5", "NFR6"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1, NFR1.2" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4, NFR2.5, NFR2.6, NFR2.7, NFR2.8" },
+    { "id": "NFR3", "status": "OK", "target": "NFR3.1, NFR3.2" },
+    { "id": "NFR4", "status": "OK", "target": "NFR4.1, NFR4.2, NFR4.3, NFR4.4, NFR4.6, NFR4.7" },
+    { "id": "NFR5", "status": "OK", "target": "NFR5.1, NFR5.2, NFR5.3, NFR5.4, NFR5.5" },
+    { "id": "NFR6", "status": "OK", "target": "NFR6.1, NFR6.2, NFR6.3, NFR6.4, NFR6.5, NFR6.6" }
+  ],
+  "reverse": [
+    { "id": "NFR4.5", "status": "N/A", "target": "documented open gap (Lockfile backup mechanism unaddressed by any approved artifact) rather than a covered requirement — see reliability-requirements.md Open Reliability Gaps" }
+  ]
+}
