@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "channel_commit": "abc123def456",
+  "engine": {
+    "ref": "e1e1e1e1e1e1",
+    "version": "0.1.0",
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "harness": "claude-code",
+    "installed_at": "2026-09-07T00:00:00Z"
+  },
+  "engine_origin": "e1e1e1e1e1e1",
+  "plugins": [
+    {
+      "name": "sample-plugin",
+      "ref": "p1p1p1p1p1p1",
+      "version": "1.0.0",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "composed_at": "2026-09-07T00:00:00Z",
+      "engine_version_at_compose": "0.1.0"
+    }
+  ],
+  "managed": ["BEGIN-sample-plugin", "END-sample-plugin"],
+  "known_failures": [],
+  "pin": null
+}

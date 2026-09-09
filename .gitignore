@@ -1,3 +1,10 @@
+# aidlc-fleet distribution CLI — build/test artifacts
+coverage/
+*.tsbuildinfo
+# Lockfile test fixtures written by integration tests into temp dirs are
+# outside the repo (fs.mkdtemp under os.tmpdir()), so no repo-local ignore
+# entry is needed for them; this line documents that deliberately.
+
 # Logs
 logs
 *.log
