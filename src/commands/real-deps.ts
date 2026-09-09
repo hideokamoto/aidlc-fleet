@@ -20,6 +20,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ChannelClient } from '../io/channel-client';
+import { extractTarGzToDir } from '../io/tar-extractor';
 import { LockfileStore, LockfileAbsentError, LockfileMalformedError } from '../io/lockfile-store';
 import { VersionGate } from '../core/version-gate';
 import { SuccessVerifier } from '../core/success-verifier';
@@ -61,6 +62,18 @@ export interface RealDepsConfig {
 
 const INSTALLED_STATE_FILE = '.aidlc-fleet-installed.json';
 const DROPS_FILE = '.aidlc-fleet.drops';
+/**
+ * Staging directory the fetched engine tarball (the whole upstream
+ * `aidlc-workflows` repo, per `buildTarballUrl`) is extracted into before
+ * compose runs. Deliberately outside `.claude` — that directory is
+ * engine-owned (BR2.1-BR2.4, `FileOwnershipGuard`) and its final contents
+ * live under `dist/<harness>/.claude` inside the extracted repo, not at
+ * its root — so this CLI never reimplements upstream's placement decision
+ * (project.md's Forbidden rule) by guessing which subtree goes where; it
+ * only unpacks the archive and points the configured compose command at
+ * it via `AIDLC_FLEET_ENGINE_SRC_DIR`.
+ */
+const ENGINE_STAGING_DIR = join('.aidlc-fleet', 'engine-src');
 
 interface InstalledStateFile {
   engineRef: string;
@@ -187,17 +200,27 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
     checkEngineDirectoryReplace: async (opts) => {
       await guard.checkEngineDirectoryReplace(join(config.projectRoot, '.claude'), opts);
     },
-    placeEngine: async (bytes, harness) => {
-      const engineDir = join(config.projectRoot, '.claude');
-      await mkdir(engineDir, { recursive: true });
-      // Actual tarball extraction/install.ts wrapping is upstream's job
-      // (never reimplemented here, project.md's Forbidden rule); this
-      // writes the verified bytes to a staging path for the configured
-      // compose command to consume.
-      await writeFile(join(engineDir, `.engine-${harness}.tar`), bytes);
+    placeEngine: async (bytes, _harness) => {
+      const stagingDir = join(config.projectRoot, ENGINE_STAGING_DIR);
+      // Start from a clean staging dir every install: a stale file left
+      // over from a previous engine version must never linger and be
+      // mistaken for part of the newly-fetched tree.
+      await rm(stagingDir, { recursive: true, force: true });
+      await mkdir(stagingDir, { recursive: true });
+      // GitHub codeload tarballs (`buildTarballUrl`) wrap the whole repo
+      // in one `<repo>-<ref>/` directory — strip that single leading
+      // segment so `stagingDir` mirrors the repo root (`dist/`, etc.)
+      // directly. Where inside that tree the harness's files live, and
+      // how they land in the project, stays the configured compose
+      // command's decision (upstream `install.ts`/`compose.ts`, never
+      // reimplemented here).
+      await extractTarGzToDir(bytes, stagingDir, { stripComponents: 1 });
     },
     runCompose: async (env) => {
-      const { exitCode } = await runComposeCommand(config.composeCommand, env);
+      const { exitCode } = await runComposeCommand(config.composeCommand, {
+        ...env,
+        AIDLC_FLEET_ENGINE_SRC_DIR: join(config.projectRoot, ENGINE_STAGING_DIR),
+      });
       return { exitCode, dropsFileContent: await readDropsFile(config.projectRoot) };
     },
     doctorFailures: async () => {
@@ -245,7 +268,11 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
     placeProjection: async (name, bytes) => {
       const dir = join(config.projectRoot, '.claude', 'plugins', name);
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, '.projection.tar'), bytes);
+      // A plugin's `ChannelPlugin.repo` tarball (unlike the engine's whole
+      // monorepo) is the plugin's own repo, so its extracted root maps
+      // directly onto this plugin's projection directory — strip the same
+      // single `<repo>-<ref>/` GitHub codeload wrapper segment.
+      await extractTarGzToDir(bytes, dir, { stripComponents: 1 });
     },
     runCompose: async (env) => {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);
