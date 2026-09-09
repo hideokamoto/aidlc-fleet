@@ -14,6 +14,30 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
+/**
+ * Bug fix: `buildRealDeps()` used to hand `engine.ref`/`plugin.ref` (a bare
+ * commit SHA, per `contract-summary.md` Contract 1) directly to
+ * `ChannelClient.fetchTarball` as if it were a URL, which crashes with
+ * `ERR_INVALID_URL` on any real channel (verified by hand against a local
+ * HTTP server before this fix). `buildTarballUrl` closes that gap by
+ * combining a repo (`owner/name`, already present on `ChannelPlugin.repo`,
+ * newly configured for the engine via `AIDLC_FLEET_ENGINE_REPO`) with the
+ * ref into GitHub's codeload tarball URL.
+ */
+describe('buildTarballUrl', () => {
+  test('combines repo and ref into a GitHub codeload tarball URL', async () => {
+    const { buildTarballUrl } = await import('./real-deps');
+    expect(buildTarballUrl('awslabs/aidlc-workflows', 'e1e1e1e1e1e1')).toBe(
+      'https://codeload.github.com/awslabs/aidlc-workflows/tar.gz/e1e1e1e1e1e1',
+    );
+  });
+
+  test('rejects an empty repo rather than building a malformed URL', async () => {
+    const { buildTarballUrl } = await import('./real-deps');
+    expect(() => buildTarballUrl('', 'e1e1e1e1e1e1')).toThrow(/repo/);
+  });
+});
+
 describe('parseDoctorOutput', () => {
   test('treats each non-blank, non-comment line as one failure', async () => {
     const { parseDoctorOutput } = await import('./real-deps');
@@ -256,7 +280,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
   test('engineInstaller.install() drives placeEngine/checkEngineDirectoryReplace/runCompose/loadLockfile/saveLockfile end-to-end', async () => {
     const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
-    const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
     try {
       // checkEngineDirectoryReplace's backup step (BR2.1) copies the
@@ -269,6 +293,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
         channelUrl: 'https://example.test/channel.json',
         composeCommand: ['compose-bin'],
         doctorCommand: ['doctor-bin'],
+        engineRepo: 'awslabs/aidlc-workflows',
       });
 
       const result = await deps.engineInstaller.install(
@@ -277,6 +302,12 @@ describe('buildRealDeps() — remaining port coverage', () => {
       );
 
       expect(result.success).toBe(true);
+      // The tarball was fetched from a real, resolvable URL built from
+      // engineRepo + the engine ref — not the bare commit SHA passed
+      // straight to fetch() (the bug this test now guards against).
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://codeload.github.com/awslabs/aidlc-workflows/tar.gz/engine-ref',
+      );
       // placeEngine wrote the staged tarball bytes.
       const staged = await readFile(join(projectRoot, '.claude', '.engine-claude-code.tar'));
       expect(new Uint8Array(staged)).toEqual(tarballBytes);
@@ -297,7 +328,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
   test('pluginManager.add() drives placeProjection/regenerateSessionStartHook end-to-end', async () => {
     const tarballBytes = new TextEncoder().encode('plugin-tarball-bytes');
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
-    const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
     try {
       // Seed a Lockfile with no plugins yet (add() reads it before placing).
@@ -339,6 +370,11 @@ describe('buildRealDeps() — remaining port coverage', () => {
       });
 
       expect(result.success).toBe(true);
+      // Fetched from a URL built out of plugin.repo + plugin.ref, not the
+      // bare ref (the same bug class as the engine-side fix above).
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://codeload.github.com/org/example-plugin/tar.gz/plugin-ref',
+      );
       const projection = await readFile(
         join(projectRoot, '.claude', 'plugins', 'example-plugin', '.projection.tar'),
       );
