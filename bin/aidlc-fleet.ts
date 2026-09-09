@@ -32,6 +32,7 @@ Environment:
   AIDLC_FLEET_CHANNEL_URL   Channel declaration URL (required)
   AIDLC_FLEET_COMPOSE_CMD   Upstream compose command, space-separated (required for mutating commands)
   AIDLC_FLEET_DOCTOR_CMD    Upstream doctor command, space-separated (optional; unset means "no unaddressed failures")
+  AIDLC_FLEET_ENGINE_REPO   "owner/name" GitHub repo the engine tarball is fetched from (required for init/update)
 `;
 
 async function main(): Promise<number> {
@@ -46,12 +47,16 @@ async function main(): Promise<number> {
   const channelUrl = process.env.AIDLC_FLEET_CHANNEL_URL ?? '';
   const composeCommand = (process.env.AIDLC_FLEET_COMPOSE_CMD ?? '').split(' ').filter(Boolean);
   const doctorCommand = (process.env.AIDLC_FLEET_DOCTOR_CMD ?? '').split(' ').filter(Boolean);
+  const engineRepo = process.env.AIDLC_FLEET_ENGINE_REPO ?? '';
   if (!channelUrl) {
     process.stderr.write('aidlc-fleet: AIDLC_FLEET_CHANNEL_URL is not set.\n');
     return 1;
   }
-
-  const deps = buildRealDeps({ projectRoot, channelUrl, composeCommand, doctorCommand });
+  // Only init/update actually fetch the engine tarball; other commands
+  // (status, doctor, pin, plugin) never need engineRepo, so it is not
+  // gated here — buildTarballUrl throws with a clear message if an
+  // engine fetch is attempted without it.
+  const deps = buildRealDeps({ projectRoot, channelUrl, composeCommand, doctorCommand, engineRepo });
   const [command, ...rest] = args;
   const pos = positionals(rest);
 

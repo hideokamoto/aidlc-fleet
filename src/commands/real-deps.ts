@@ -47,6 +47,16 @@ export interface RealDepsConfig {
    * verification rather than crashing the CLI.
    */
   doctorCommand?: string[];
+  /**
+   * `owner/name` GitHub repo the engine tarball is fetched from. Required
+   * whenever an engine install/update actually runs (`init`/`update`).
+   * Unlike `ChannelPlugin`, `ChannelEngine` carries no `repo` field
+   * (`contract-summary.md` Contract 1 — that schema is owned externally by
+   * the channel operator, so this CLI cannot add one unilaterally); this
+   * config value fills that gap without touching the contract. Configured
+   * via `AIDLC_FLEET_ENGINE_REPO`.
+   */
+  engineRepo?: string;
 }
 
 const INSTALLED_STATE_FILE = '.aidlc-fleet-installed.json';
@@ -55,6 +65,26 @@ const DROPS_FILE = '.aidlc-fleet.drops';
 interface InstalledStateFile {
   engineRef: string;
   pluginRefs: Record<string, string>;
+}
+
+/**
+ * Builds the tarball URL for a given `owner/name` repo and commit ref,
+ * using GitHub's codeload archive convention.
+ *
+ * Bug fix: before this existed, `fetchEngineTarball`/`fetchPluginTarball`
+ * passed `engine.ref`/`plugin.ref` — a bare commit SHA per
+ * `contract-summary.md` Contract 1 — directly to `ChannelClient.fetchTarball`
+ * as if it were already a URL. Against a real channel this throws
+ * `TypeError [ERR_INVALID_URL]` before any tarball is ever fetched
+ * (confirmed against a local HTTP server serving a valid Channel
+ * declaration); the prior test suite never caught it because its `fetch`
+ * mock accepted any string as a valid URL.
+ */
+export function buildTarballUrl(repo: string, ref: string): string {
+  if (!repo) {
+    throw new Error('real-deps: cannot build a tarball URL without a repo (owner/name)');
+  }
+  return `https://codeload.github.com/${repo}/tar.gz/${ref}`;
 }
 
 async function readInstalledState(projectRoot: string): Promise<InstalledStateFile> {
@@ -149,7 +179,11 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
 
   const engineInstaller = new EngineInstaller({
     projectRoot: config.projectRoot,
-    fetchEngineTarball: (engine) => channelClient.fetchTarball(engine.ref, engine.sha256),
+    fetchEngineTarball: (engine) =>
+      channelClient.fetchTarball(
+        buildTarballUrl(config.engineRepo ?? '', engine.ref),
+        engine.sha256,
+      ),
     checkEngineDirectoryReplace: async (opts) => {
       await guard.checkEngineDirectoryReplace(join(config.projectRoot, '.claude'), opts);
     },
@@ -188,7 +222,8 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
 
   const pluginManager = new PluginManager({
     projectRoot: config.projectRoot,
-    fetchPluginTarball: (plugin) => channelClient.fetchTarball(plugin.ref, plugin.sha256),
+    fetchPluginTarball: (plugin) =>
+      channelClient.fetchTarball(buildTarballUrl(plugin.repo, plugin.ref), plugin.sha256),
     checkWriteAllowed: async (targetPath) => {
       await guard.checkWriteAllowed(join(config.projectRoot, targetPath), {
         isInitialSeedCopy: false,
