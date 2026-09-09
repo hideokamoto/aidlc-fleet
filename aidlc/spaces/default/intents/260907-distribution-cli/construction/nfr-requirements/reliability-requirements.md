@@ -11,7 +11,7 @@ recoverable state? (Q4, `nfr-requirements-questions.md`)
 |----|-------------|--------|
 | NFR4.1 | A failed `init`/`update`/`plugin add`/`plugin remove` must never leave `aidlc.lock.json` partially written — the write is all-or-nothing per command invocation. The exact mechanism (temp-file-plus-rename, write-ahead journal, etc.) is a Code Generation implementation choice, not specified here. | This stage's own requirement, derived from BR8.1 (`functional-design/rules.md`) and the exit-code contract's implicit assumption that a failed command leaves no half-applied state |
 | NFR4.2 | A missing or malformed `aidlc.lock.json` is a hard failure for every command except `init` (which creates it) — the CLI never guesses at a partial/corrupt lockfile's intended state. | BR8.1, `functional-design/rules.md`; `contract-summary.md` Contract 2 |
-| NFR4.3 | Any detected file-ownership invariant violation (BR2.1–BR2.6) fails immediately, before any further mutation — fail-fast, never a partial apply followed by a warning. | BR2.6, `functional-design/rules.md`; practices-discovery Mandated rule |
+| NFR4.3 | Any detected file-ownership invariant violation (BR2.1–BR2.6) fails immediately, before any further mutation — fail-fast, never a partial apply followed by a warning. | BR2.6, `functional-design/rules.md`; practices-discovery Forbidden rule, `project.md`: "NEVER ファイル所有権 invariant 違反を警告のみで処理し、処理を継続しない" |
 
 ## Durability
 

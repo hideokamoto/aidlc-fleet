@@ -9,7 +9,7 @@ with no server and no concurrent-user load (Q1,
 
 | ID | Requirement | Target | Percentile | Load Condition | Measurement Method |
 |----|-------------|--------|------------|-----------------|---------------------|
-| NFR1.1 | `init`/`update`/`plugin add`/`plugin remove` execution time (network-bound: channel fetch + tarball download + integrity verification + placement) | < 10s | p95 | Single invocation, typical channel + single-plugin tarball size, broadband connection, excluding retry/backoff time | Wall-clock time from process start to exit, measured in Build and Test / Performance Validation |
+| NFR1.1 | `init`/`update`/`plugin add`/`plugin remove` execution time (network-bound: channel fetch + tarball download + integrity verification + placement) | < 10s | p95 | Single invocation, typical channel + single-plugin tarball size, broadband connection, excluding retry/backoff time | Wall-clock time from process start to exit, measured in Build and Test — this workflow's approved scope grid has no Performance Validation stage, so no later stage owns re-measuring this target if the assumption proves wrong |
 | NFR1.2 | `check`/`status`/`pin`/`unpin`/`doctor` execution time (local-only, or a single small channel fetch for `check`/`status`) | < 2s | p95 | Single invocation | Wall-clock time from process start to exit |
 
 ## Source and Status
