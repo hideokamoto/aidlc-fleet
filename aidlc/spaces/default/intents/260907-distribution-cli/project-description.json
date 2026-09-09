@@ -1,0 +1,1 @@
+"以下のドキュメントを参考に、intentを作成して進めろ。ドキュメントにある情報は質問してくるな。aidlc-fleet — 配布 CLI 要件定義 v0.1。対象上流: awslabs/aidlc-workflows v2.7.0。複数プロジェクトのエンジン版とプラグイン集合を中央の1ファイルで宣言し、各プロジェクトがupdate/checkで追随する配布CLI(TypeScript/bun)を構築する。詳細は事前に共有した要件定義v0.1ドキュメントの通り。init/update/check/plugin add/remove/pin/unpin/status/doctorの各コマンド、lockfileとchannelのデータモデル、versionゲート、sessionStart hook、成功判定基準、ファイル所有ルールを実装する。"

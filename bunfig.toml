@@ -1,0 +1,16 @@
+# team.md Testing Posture mandates an 80% LINE-coverage floor enforced in
+# CI ("80% ライン・カバレッジ床を CI で必須化し、マージ前に green である
+# ことを要求する"). `bun test --coverage` alone only reports coverage — it
+# does not fail the process when coverage drops below the floor. This
+# threshold makes it do so, checked per-file (bun's own semantics, not
+# against the "All files" average).
+#
+# `functions` is set to 0.0 (i.e. no function-coverage requirement) rather
+# than omitted: omitting it entirely causes `bun test --coverage` (v1.3.11)
+# to always exit non-zero regardless of actual coverage — confirmed by
+# direct testing, not documented behavior. `functions = 0.0` is an
+# explicit, always-satisfied no-op that keeps this floor scoped to the one
+# metric team.md actually mandates (line coverage), without also gating on
+# function coverage, which no approved artifact requires.
+[test]
+coverageThreshold = { lines = 0.8, functions = 0.0 }

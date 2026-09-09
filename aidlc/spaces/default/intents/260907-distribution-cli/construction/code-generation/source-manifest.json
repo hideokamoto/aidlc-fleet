@@ -1,0 +1,14 @@
+{
+  "stage": "code-generation",
+  "unit": null,
+  "version": 1,
+  "writes": [
+    { "path": "package.json" },
+    { "path": "tsconfig.json" },
+    { "path": ".prettierrc" },
+    { "path": "eslint.config.js" },
+    { "path": ".gitignore" },
+    { "path": "bin/" },
+    { "path": "src/" }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "stage": "functional-design",
+  "note": "units-generation and requirements-analysis are both SKIP in this workflow's approved grid, so no unit-of-work.md or requirements.md exists. upstream_ids are the intent-backlog.md item IDs (ideation/scope-definition/intent-backlog.md) — the same stable identifier series domain-design's own traceability.json used, since this workflow produced no closer AC-level IDs upstream of this stage.",
+  "unit": null,
+  "upstream_ids": ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "S1", "S2", "S3", "C1", "C2"],
+  "coverage": [
+    { "id": "M1", "status": "OK", "target": "BR3.1" },
+    { "id": "M2", "status": "OK", "target": "BR3.1, BR3.2, BR3.3, BR3.4" },
+    { "id": "M3", "status": "OK", "target": "BR1.1, BR1.2, BR1.3, BR1.4, BR1.5" },
+    { "id": "M4", "status": "OK", "target": "BR2.1, BR2.2, BR2.3, BR2.4, BR2.5, BR2.6" },
+    { "id": "M5", "status": "OK", "target": "BR1.1, BR1.2, BR1.3, BR1.5" },
+    { "id": "M6", "status": "OK", "target": "BR5.1, BR5.2" },
+    { "id": "M7", "status": "OK", "target": "BR3.4" },
+    { "id": "M8", "status": "OK", "target": "BR5.2" },
+    { "id": "S1", "status": "OK", "target": "BR4.1" },
+    { "id": "S2", "status": "GAP", "target": "sessionStart hook BEGIN/END wrapper generation is an implementation mechanism (see functional-spec.md plugin add/remove workflow steps), not a business rule with decision logic — no BRx.y owns it; carried forward to Code Generation as a mechanical requirement rather than invented here as a rule" },
+    { "id": "S3", "status": "OK", "target": "BR5.1, BR5.3" },
+    { "id": "C1", "status": "OK", "target": "BR6.1" },
+    { "id": "C2", "status": "GAP", "target": "AIDLC_UNATTENDED=1 recognition remains a cross-cutting CommandLayer flag read with no decision logic of its own (same GAP carried from domain-design/traceability.json); deferred again to Code Generation for the exact command-by-command behavior spec" }
+  ],
+  "reverse": [
+    { "id": "BR7.1", "status": "N/A", "target": "technical integrity rule from contract-summary.md Contract 1, not a backlog-item-driven business rule" },
+    { "id": "BR7.2", "status": "N/A", "target": "technical integrity rule from contract-summary.md Contract 1, not a backlog-item-driven business rule" },
+    { "id": "BR8.1", "status": "N/A", "target": "technical integrity rule from contract-summary.md Contract 2, not a backlog-item-driven business rule" }
+  ]
+}
