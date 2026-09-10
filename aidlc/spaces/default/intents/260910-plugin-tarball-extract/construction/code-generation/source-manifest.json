@@ -1,0 +1,12 @@
+{
+  "stage": "code-generation",
+  "unit": null,
+  "version": 1,
+  "writes": [
+    { "path": "src/io/tar-extract.ts" },
+    { "path": "src/io/tar-extract.test.ts" },
+    { "path": "src/commands/real-deps.ts" },
+    { "path": "src/commands/real-deps.test.ts" },
+    { "path": "src/orchestration/plugin-manager.ts" }
+  ]
+}

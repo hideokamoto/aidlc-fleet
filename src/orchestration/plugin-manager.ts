@@ -147,7 +147,18 @@ export class PluginManager {
     return { success: true, compose, pluginSyncClassification };
   }
 
+  /**
+   * issue #5 (FR3.1): プラグインの論理名のみを返す。物理的な書き込み先
+   * パス（`.claude/plugins/<name>`）との合成は行わない — その合成は
+   * `real-deps.ts` の `checkWriteAllowed` クロージャ（統合グルー層）の
+   * 責務であり、`FileOwnershipGuard` が実際の書き込み先に対してシンボ
+   * リックリンク検査（M4, BR2.4）を行えるようにする（修正前は
+   * `plugins/<name>` を返しており、`projectRoot` と合成すると
+   * `<projectRoot>/plugins/<name>` という実際には書き込まれない誤った
+   * パスを検査していた）。全3呼び出し箇所（`add()` 2箇所, `remove()` 1
+   * 箇所）が一貫してこのメソッド経由で呼ばれる（FR3.3）。
+   */
   private pluginDirLabel(pluginName: string): string {
-    return `plugins/${pluginName}`;
+    return pluginName;
   }
 }

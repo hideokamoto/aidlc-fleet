@@ -1,0 +1,42 @@
+{
+  "stage": "code-generation",
+  "unit": null,
+  "upstream_ids": [
+    "FR1.1",
+    "FR1.2",
+    "FR1.3",
+    "FR1.4",
+    "FR2.1",
+    "FR2.2",
+    "FR3.1",
+    "FR3.2",
+    "FR3.3",
+    "FR4.1",
+    "FR4.2",
+    "FR5.1",
+    "FR5.2",
+    "NFR1",
+    "NFR2",
+    "NFR3",
+    "NFR4"
+  ],
+  "coverage": [
+    { "id": "FR1.1", "status": "OK", "target": "src/commands/real-deps.ts" },
+    { "id": "FR1.2", "status": "OK", "target": "src/io/tar-extract.ts" },
+    { "id": "FR1.3", "status": "OK", "target": "src/io/tar-extract.ts" },
+    { "id": "FR1.4", "status": "OK", "target": "src/commands/real-deps.test.ts" },
+    { "id": "FR2.1", "status": "OK", "target": "src/commands/real-deps.ts" },
+    { "id": "FR2.2", "status": "OK", "target": "src/commands/real-deps.test.ts" },
+    { "id": "FR3.1", "status": "OK", "target": "src/orchestration/plugin-manager.ts" },
+    { "id": "FR3.2", "status": "OK", "target": "src/commands/real-deps.ts" },
+    { "id": "FR3.3", "status": "OK", "target": "src/commands/real-deps.test.ts" },
+    { "id": "FR4.1", "status": "OK", "target": "src/io/tar-extract.ts" },
+    { "id": "FR4.2", "status": "OK", "target": "src/io/tar-extract.test.ts" },
+    { "id": "FR5.1", "status": "OK", "target": "src/orchestration/plugin-manager.ts" },
+    { "id": "FR5.2", "status": "OK", "target": "src/commands/real-deps.ts" },
+    { "id": "NFR1", "status": "OK", "target": "src/io/tar-extract.ts" },
+    { "id": "NFR2", "status": "OK", "target": "src/io/tar-extract.test.ts" },
+    { "id": "NFR3", "status": "OK", "target": "src/io/tar-extract.test.ts" },
+    { "id": "NFR4", "status": "OK", "target": "src/commands/real-deps.test.ts" }
+  ]
+}

@@ -9,10 +9,65 @@
  */
 import { test, expect, describe, mock } from 'bun:test';
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+
+const TAR_BLOCK_SIZE = 512;
+
+/**
+ * ustar ヘッダー（512バイト）を1件手組みするテスト用ヘルパー。
+ * `src/io/tar-extract.test.ts` の同名ヘルパーと同じ設計方針
+ * （unit-test-instructions.md「Test Data Management」: バイナリ
+ * フィクスチャファイルは追加せず、テストコード内で動的生成する）。
+ */
+function buildTarHeader(name: string, size: number, typeflag: string): Uint8Array {
+  const header = new Uint8Array(TAR_BLOCK_SIZE);
+  const encoder = new TextEncoder();
+  const writeField = (value: string, offset: number, length: number) => {
+    const bytes = encoder.encode(value);
+    header.set(bytes.subarray(0, length), offset);
+  };
+  writeField(name, 0, 100);
+  writeField('0000644', 100, 8);
+  writeField('0000000', 108, 8);
+  writeField('0000000', 116, 8);
+  writeField(size.toString(8).padStart(11, '0'), 124, 12);
+  writeField('00000000000', 136, 12);
+  writeField('        ', 148, 8);
+  header[156] = typeflag.charCodeAt(0);
+  writeField('ustar', 257, 6);
+  writeField('00', 263, 2);
+  return header;
+}
+
+/** ラッパーディレクトリ付き gzip tarball（GitHub codeload 規約）をテスト用に生成する。 */
+function buildPluginGzipTarball(
+  entries: Array<{ name: string; typeflag: string; content?: string }>,
+): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  for (const entry of entries) {
+    const content = entry.content ?? '';
+    const contentBytes = new TextEncoder().encode(content);
+    chunks.push(buildTarHeader(entry.name, contentBytes.length, entry.typeflag));
+    if (contentBytes.length > 0) {
+      const padded = new Uint8Array(Math.ceil(contentBytes.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE);
+      padded.set(contentBytes);
+      chunks.push(padded);
+    }
+  }
+  chunks.push(new Uint8Array(TAR_BLOCK_SIZE * 2));
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return gzipSync(out);
+}
 
 /**
  * Bug fix: `buildRealDeps()` used to hand `engine.ref`/`plugin.ref` (a bare
@@ -325,8 +380,24 @@ describe('buildRealDeps() — remaining port coverage', () => {
     }
   });
 
-  test('pluginManager.add() drives placeProjection/regenerateSessionStartHook end-to-end', async () => {
-    const tarballBytes = new TextEncoder().encode('plugin-tarball-bytes');
+  /**
+   * issue #5: このテストはかつて「`placeProjection` が生バイト列を
+   * `.projection.tar` にそのまま書き出す」という旧・バグ挙動を green
+   * にしていた（アサーションが `.projection.tar` の中身が生バイト列と
+   * 一致することを確認していた）。修正後は実際に tarball が展開され、
+   * ラッパーディレクトリが除去されたファイルツリーが
+   * `.claude/plugins/<name>/` 配下に実在することを検証する
+   * （FR1.1〜FR1.4, code-generation-plan.md Step 11）。
+   */
+  test('pluginManager.add() drives placeProjection/regenerateSessionStartHook end-to-end (実際に tarball を展開する)', async () => {
+    const tarballBytes = buildPluginGzipTarball([
+      { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+      {
+        name: 'example-plugin-plugin-ref/claude-code-plugin/plugin.json',
+        typeflag: '0',
+        content: '{"name":"example-plugin"}',
+      },
+    ]);
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
     const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
@@ -375,10 +446,25 @@ describe('buildRealDeps() — remaining port coverage', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         'https://codeload.github.com/org/example-plugin/tar.gz/plugin-ref',
       );
-      const projection = await readFile(
-        join(projectRoot, '.claude', 'plugins', 'example-plugin', '.projection.tar'),
+      // The tarball is now actually EXTRACTED (issue #5 fix): no more raw
+      // `.projection.tar` bytes — a real, readable file tree exists, with
+      // the GitHub codeload wrapper directory stripped (FR1.3).
+      const pluginJson = await readFile(
+        join(
+          projectRoot,
+          '.claude',
+          'plugins',
+          'example-plugin',
+          'claude-code-plugin',
+          'plugin.json',
+        ),
+        'utf8',
       );
-      expect(new Uint8Array(projection)).toEqual(tarballBytes);
+      expect(pluginJson).toBe('{"name":"example-plugin"}');
+      const projectionDirEntries = await readdir(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin'),
+      );
+      expect(projectionDirEntries).not.toContain('.projection.tar');
       const hook = await readFile(
         join(projectRoot, '.claude', 'hooks', 'session-start.sh'),
         'utf8',
@@ -389,6 +475,194 @@ describe('buildRealDeps() — remaining port coverage', () => {
         'utf8',
       );
       expect(JSON.parse(installedStateRaw).pluginRefs['example-plugin']).toBe('plugin-ref');
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * issue #5 Step 12（team.md Mandated 実ファイルシステム統合テスト、
+   * NFR4）: バージョン更新シナリオ — `removeProjection` が旧ファイルを
+   * 完全に削除してから新ファイルが配置されることを実ファイルシステムで
+   * 検証する（FR2.1, FR2.2）。
+   */
+  test('pluginManager.add() を異なる内容の tarball で2回実行すると、旧ファイルが完全に削除されてから新ファイルが配置される（FR2.1, FR2.2）', async () => {
+    const firstTarball = buildPluginGzipTarball([
+      { name: 'example-plugin-ref1/', typeflag: '5' },
+      { name: 'example-plugin-ref1/old-only.txt', typeflag: '0', content: 'v1 content' },
+    ]);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await writeFile(
+        join(projectRoot, 'aidlc.lock.json'),
+        JSON.stringify({
+          schema: 1,
+          channel: 'stable',
+          channel_commit: 'abc123',
+          engine: {
+            ref: 'engine-ref',
+            version: '0.1.0',
+            sha256: 'deadbeef',
+            harness: 'claude-code',
+            installed_at: '2026-01-01T00:00:00.000Z',
+          },
+          engine_origin: '0.1.0',
+          plugins: [],
+          managed: [],
+          known_failures: [],
+          pin: null,
+        }),
+        'utf8',
+      );
+
+      // 1回目: v1 を配置する。
+      {
+        const sha256 = createHash('sha256').update(firstTarball).digest('hex');
+        const { restoreFetch } = installEnvironmentMocks(firstTarball);
+        try {
+          const { buildRealDeps } = await import('./real-deps');
+          const deps = buildRealDeps({
+            projectRoot,
+            channelUrl: 'https://example.test/channel.json',
+            composeCommand: ['compose-bin'],
+            doctorCommand: ['doctor-bin'],
+          });
+          const result = await deps.pluginManager.add({
+            name: 'example-plugin',
+            repo: 'org/example-plugin',
+            ref: 'ref1',
+            version: '1.0.0',
+            sha256,
+          });
+          expect(result.success).toBe(true);
+        } finally {
+          restoreFetch();
+        }
+      }
+      const oldFile = await readFile(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin', 'old-only.txt'),
+        'utf8',
+      );
+      expect(oldFile).toBe('v1 content');
+
+      // 2回目: 異なる内容の v2 を、既存プラグインがある状態で配置する。
+      const secondTarball = buildPluginGzipTarball([
+        { name: 'example-plugin-ref2/', typeflag: '5' },
+        { name: 'example-plugin-ref2/new-only.txt', typeflag: '0', content: 'v2 content' },
+      ]);
+      {
+        const sha256 = createHash('sha256').update(secondTarball).digest('hex');
+        const { restoreFetch } = installEnvironmentMocks(secondTarball);
+        try {
+          const { buildRealDeps } = await import('./real-deps');
+          const deps = buildRealDeps({
+            projectRoot,
+            channelUrl: 'https://example.test/channel.json',
+            composeCommand: ['compose-bin'],
+            doctorCommand: ['doctor-bin'],
+          });
+          const result = await deps.pluginManager.add({
+            name: 'example-plugin',
+            repo: 'org/example-plugin',
+            ref: 'ref2',
+            version: '2.0.0',
+            sha256,
+          });
+          expect(result.success).toBe(true);
+        } finally {
+          restoreFetch();
+        }
+      }
+
+      // 旧ファイルは完全に削除され、新ファイルのみが存在する。
+      const finalEntries = await readdir(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin'),
+      );
+      expect(finalEntries).toEqual(['new-only.txt']);
+      const newFile = await readFile(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin', 'new-only.txt'),
+        'utf8',
+      );
+      expect(newFile).toBe('v2 content');
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * issue #5 Step 12（team.md Mandated 実ファイルシステム統合テスト、
+   * NFR4）: パス整合性シナリオ — `.claude/plugins/<name>` を事前に
+   * シンボリックリンクとして作成した状態で `add()` を実行し、
+   * `FileOwnershipGuard` が実際の書き込み先に対してシンボリックリンク
+   * 違反を検出して拒否することを検証する（FR3.2, FR3.3 — 修正前は
+   * `pluginDirLabel()` が `plugins/<name>` を返し、`projectRoot` と合成
+   * すると `<projectRoot>/plugins/<name>` という誤ったパスを検査して
+   * いたため、この違反を検出できなかった）。
+   */
+  test('.claude/plugins/<name> がシンボリックリンクの場合、add() は FileOwnershipViolation で拒否する（FR3.2, FR3.3）', async () => {
+    const tarballBytes = buildPluginGzipTarball([
+      { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+      { name: 'example-plugin-plugin-ref/plugin.json', typeflag: '0', content: '{}' },
+    ]);
+    const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+    const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await writeFile(
+        join(projectRoot, 'aidlc.lock.json'),
+        JSON.stringify({
+          schema: 1,
+          channel: 'stable',
+          channel_commit: 'abc123',
+          engine: {
+            ref: 'engine-ref',
+            version: '0.1.0',
+            sha256: 'deadbeef',
+            harness: 'claude-code',
+            installed_at: '2026-01-01T00:00:00.000Z',
+          },
+          engine_origin: '0.1.0',
+          plugins: [],
+          managed: [],
+          known_failures: [],
+          pin: null,
+        }),
+        'utf8',
+      );
+
+      // 攻撃/事故シナリオを再現: 展開先そのものが、プロジェクト外の
+      // 実ディレクトリへのシンボリックリンクとして事前に存在する。
+      const outsideTarget = await mkdtemp(join(tmpdir(), 'aidlc-fleet-symlink-target-'));
+      await mkdir(join(projectRoot, '.claude', 'plugins'), { recursive: true });
+      await symlink(
+        outsideTarget,
+        join(projectRoot, '.claude', 'plugins', 'example-plugin'),
+        'dir',
+      );
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+        doctorCommand: ['doctor-bin'],
+      });
+
+      await expect(
+        deps.pluginManager.add({
+          name: 'example-plugin',
+          repo: 'org/example-plugin',
+          ref: 'plugin-ref',
+          version: '1.0.0',
+          sha256,
+        }),
+      ).rejects.toThrow(/symlink/);
+
+      // シンボリックリンクの向こう側には何も書き込まれていない。
+      const outsideEntries = await readdir(outsideTarget);
+      expect(outsideEntries).toEqual([]);
+      await rm(outsideTarget, { recursive: true, force: true });
     } finally {
       restoreFetch();
       await rm(projectRoot, { recursive: true, force: true });

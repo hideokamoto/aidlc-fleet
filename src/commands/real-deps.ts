@@ -20,6 +20,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ChannelClient } from '../io/channel-client';
+import { extractTarGz } from '../io/tar-extract';
 import { LockfileStore, LockfileAbsentError, LockfileMalformedError } from '../io/lockfile-store';
 import { VersionGate } from '../core/version-gate';
 import { SuccessVerifier } from '../core/success-verifier';
@@ -224,10 +225,19 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
     projectRoot: config.projectRoot,
     fetchPluginTarball: (plugin) =>
       channelClient.fetchTarball(buildTarballUrl(plugin.repo, plugin.ref), plugin.sha256),
-    checkWriteAllowed: async (targetPath) => {
-      await guard.checkWriteAllowed(join(config.projectRoot, targetPath), {
-        isInitialSeedCopy: false,
-      });
+    checkWriteAllowed: async (pluginLogicalName) => {
+      // issue #5 (FR3.2): `PluginManager.pluginDirLabel()` now returns
+      // only the plugin's logical name (FR3.1) — this integration-glue
+      // closure is responsible for completing it into the real physical
+      // write target (`.claude/plugins/<name>`) before handing it to
+      // `FileOwnershipGuard`, so the symlink check (M4, BR2.4) actually
+      // inspects the path this module writes to (`placeProjection`
+      // below), not a `<projectRoot>/plugins/<name>` path that was never
+      // the real target.
+      await guard.checkWriteAllowed(
+        join(config.projectRoot, '.claude', 'plugins', pluginLogicalName),
+        { isInitialSeedCopy: false },
+      );
     },
     loadLockfile: () => lockfileStore.load(),
     saveLockfile: async (lockfile) => {
@@ -237,15 +247,26 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       await writeInstalledState(config.projectRoot, { ...state, pluginRefs });
     },
     removeProjection: async (name) => {
+      // FR2.1: recursively removes the entire extracted plugin tree (not
+      // just a single `.projection.tar` file, now that placeProjection
+      // below actually extracts one) — PluginManager.add() always calls
+      // this before placeProjection when a prior version exists (BR4.1),
+      // so no file from the old version can survive into the new one.
       await rm(join(config.projectRoot, '.claude', 'plugins', name), {
         recursive: true,
         force: true,
       });
     },
     placeProjection: async (name, bytes) => {
+      // issue #5 (FR1.1): actually extract the verified gzip'd tar bytes
+      // into a readable file tree, instead of writing the raw archive
+      // bytes to `.projection.tar` (the original bug — upstream compose
+      // never got a usable plugin directory). `extractTarGz` handles
+      // gunzip, ustar parsing, wrapper-directory stripping (FR1.3), and
+      // tar-slip path validation (FR4) itself.
       const dir = join(config.projectRoot, '.claude', 'plugins', name);
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, '.projection.tar'), bytes);
+      await extractTarGz(bytes, dir);
     },
     runCompose: async (env) => {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);
