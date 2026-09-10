@@ -382,6 +382,46 @@ describe('buildRealDeps() — remaining port coverage', () => {
     }
   });
 
+  test('placeEngine leaves the existing engine-src staging dir intact when extraction fails', async () => {
+    // Guards against a "delete then extract" ordering: a malformed archive
+    // (or a filesystem error partway through extraction) must never leave
+    // AIDLC_FLEET_ENGINE_SRC_DIR empty/partial — runCompose and any retry
+    // still need to read a usable tree from a *previous* successful install.
+    const corruptTarballBytes = new TextEncoder().encode('not a valid gzip stream');
+    const sha256 = createHash('sha256').update(corruptTarballBytes).digest('hex');
+    const { restoreFetch } = installEnvironmentMocks(corruptTarballBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const stagingDir = join(projectRoot, '.aidlc-fleet', 'engine-src');
+      await mkdir(stagingDir, { recursive: true });
+      await writeFile(join(stagingDir, 'previously-installed.txt'), 'from a prior good install');
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+        doctorCommand: ['doctor-bin'],
+        engineRepo: 'awslabs/aidlc-workflows',
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+          { harness: 'claude-code', force: true, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow();
+
+      // The previous, still-good staging tree survives the failed install.
+      const survived = await readFile(join(stagingDir, 'previously-installed.txt'), 'utf8');
+      expect(survived).toBe('from a prior good install');
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   test('pluginManager.add() drives placeProjection/regenerateSessionStartHook end-to-end', async () => {
     const tarballBytes = buildTarGzFixture(
       'example-plugin-plugin-ref',

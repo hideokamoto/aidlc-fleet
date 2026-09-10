@@ -10,7 +10,7 @@
  */
 import { test, expect, describe } from 'bun:test';
 import { gzipSync } from 'node:zlib';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseTar, gunzipAndParseTar, extractTarGzToDir, TarFormatError } from './tar-extractor';
@@ -32,10 +32,15 @@ function writeOctalField(target: Uint8Array, start: number, length: number, valu
 }
 
 /** Builds one ustar header block for a regular file or directory entry. */
-function buildHeader(opts: { name: string; size: number; typeflag: string }): Uint8Array {
+function buildHeader(opts: {
+  name: string;
+  size: number;
+  typeflag: string;
+  mode?: number;
+}): Uint8Array {
   const header = block();
   writeField(header, 0, opts.name);
-  writeOctalField(header, 100, 8, 0o644);
+  writeOctalField(header, 100, 8, opts.mode ?? 0o644);
   writeOctalField(header, 108, 8, 0);
   writeOctalField(header, 116, 8, 0);
   writeOctalField(header, 124, 12, opts.size);
@@ -54,9 +59,9 @@ function padToBlock(content: Uint8Array): Uint8Array {
   return padded;
 }
 
-function buildFileEntry(name: string, content: string): Uint8Array {
+function buildFileEntry(name: string, content: string, mode?: number): Uint8Array {
   const contentBytes = Buffer.from(content, 'utf8');
-  const header = buildHeader({ name, size: contentBytes.length, typeflag: '0' });
+  const header = buildHeader({ name, size: contentBytes.length, typeflag: '0', mode });
   return concat([header, padToBlock(contentBytes)]);
 }
 
@@ -97,6 +102,7 @@ describe('parseTar', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.path).toBe('hello.txt');
     expect(entries[0]!.type).toBe('file');
+    expect(entries[0]!.mode).toBe(0o644);
     expect(Buffer.from(entries[0]!.content).toString('utf8')).toBe('hi there');
   });
 
@@ -192,6 +198,27 @@ describe('extractTarGzToDir', () => {
       await expect(extractTarGzToDir(gz, dir, { stripComponents: 0 })).rejects.toThrow(
         TarFormatError,
       );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('preserves the executable bit from the archived mode', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'aidlc-fleet-tar-'));
+    try {
+      const tar = concat([
+        buildFileEntry('run.sh', '#!/bin/sh\necho hi\n', 0o755),
+        buildFileEntry('data.txt', 'plain', 0o644),
+        endOfArchiveMarker(),
+      ]);
+      const gz = gzipSync(Buffer.from(tar));
+
+      await extractTarGzToDir(gz, dir, {});
+
+      const runStat = await stat(join(dir, 'run.sh'));
+      const dataStat = await stat(join(dir, 'data.txt'));
+      expect(runStat.mode & 0o111).not.toBe(0); // executable bit carried over
+      expect(dataStat.mode & 0o111).toBe(0); // no executable bit added where the archive had none
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

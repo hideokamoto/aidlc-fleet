@@ -17,7 +17,7 @@
  * inline and in `code-summary.md`.
  */
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ChannelClient } from '../io/channel-client';
 import { extractTarGzToDir } from '../io/tar-extractor';
@@ -202,19 +202,30 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
     },
     placeEngine: async (bytes, _harness) => {
       const stagingDir = join(config.projectRoot, ENGINE_STAGING_DIR);
-      // Start from a clean staging dir every install: a stale file left
-      // over from a previous engine version must never linger and be
-      // mistaken for part of the newly-fetched tree.
+      // Extract into a fresh sibling directory first, and only swap it in
+      // for `stagingDir` once extraction has fully succeeded. Extracting
+      // straight into a wiped `stagingDir` would leave it empty/partial —
+      // and therefore unusable by `runCompose` and any later retry — the
+      // moment a malformed archive or filesystem error interrupts
+      // `extractTarGzToDir` partway through.
+      const tempDir = `${stagingDir}.new-${process.pid}-${Date.now()}`;
+      await rm(tempDir, { recursive: true, force: true });
+      await mkdir(tempDir, { recursive: true });
+      try {
+        // GitHub codeload tarballs (`buildTarballUrl`) wrap the whole repo
+        // in one `<repo>-<ref>/` directory — strip that single leading
+        // segment so `stagingDir` mirrors the repo root (`dist/`, etc.)
+        // directly. Where inside that tree the harness's files live, and
+        // how they land in the project, stays the configured compose
+        // command's decision (upstream `install.ts`/`compose.ts`, never
+        // reimplemented here).
+        await extractTarGzToDir(bytes, tempDir, { stripComponents: 1 });
+      } catch (cause) {
+        await rm(tempDir, { recursive: true, force: true });
+        throw cause;
+      }
       await rm(stagingDir, { recursive: true, force: true });
-      await mkdir(stagingDir, { recursive: true });
-      // GitHub codeload tarballs (`buildTarballUrl`) wrap the whole repo
-      // in one `<repo>-<ref>/` directory — strip that single leading
-      // segment so `stagingDir` mirrors the repo root (`dist/`, etc.)
-      // directly. Where inside that tree the harness's files live, and
-      // how they land in the project, stays the configured compose
-      // command's decision (upstream `install.ts`/`compose.ts`, never
-      // reimplemented here).
-      await extractTarGzToDir(bytes, stagingDir, { stripComponents: 1 });
+      await rename(tempDir, stagingDir);
     },
     runCompose: async (env) => {
       const { exitCode } = await runComposeCommand(config.composeCommand, {

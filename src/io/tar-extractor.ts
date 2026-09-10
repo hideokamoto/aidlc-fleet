@@ -20,7 +20,7 @@
  * files, kept deliberately thin over `parseTar`'s output.
  */
 import { gunzipSync } from 'node:zlib';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 export type TarEntryType = 'file' | 'directory' | 'symlink' | 'other';
@@ -31,6 +31,8 @@ export interface TarEntry {
   type: TarEntryType;
   content: Uint8Array;
   linkname?: string;
+  /** POSIX permission bits from the ustar `mode` field (e.g. `0o755`). */
+  mode: number;
 }
 
 /** Raised when the archive bytes cannot be parsed as a well-formed tar stream. */
@@ -119,6 +121,7 @@ export function parseTar(buffer: Uint8Array): TarEntry[] {
     if (isAllZero(header)) break; // two-zero-block end-of-archive marker; one is enough to stop here
 
     const name = readCString(header, 0, 100);
+    const mode = readOctal(header, 100, 8);
     const size = readOctal(header, 124, 12);
     const typeflag = readCString(header, 156, 1);
     const linkname = readCString(header, 157, 100);
@@ -154,6 +157,7 @@ export function parseTar(buffer: Uint8Array): TarEntry[] {
       type: typeflagToType(typeflag),
       content: body,
       linkname: linkname.length > 0 ? linkname : undefined,
+      mode,
     });
     pendingLongName = undefined;
     pendingPax = undefined;
@@ -218,6 +222,14 @@ export async function extractTarGzToDir(
 
     await mkdir(dirname(targetPath), { recursive: true });
     await writeFile(targetPath, entry.content);
+    // writeFile's default mode already applied the process umask; layer the
+    // archive's executable bits on top of whatever that produced, rather
+    // than reproducing the archive's full mode (which would also fight the
+    // umask for read/write bits).
+    if ((entry.mode & 0o111) !== 0) {
+      const writtenStat = await stat(targetPath);
+      await chmod(targetPath, writtenStat.mode | (entry.mode & 0o111));
+    }
     written.push(relativePath);
   }
 
