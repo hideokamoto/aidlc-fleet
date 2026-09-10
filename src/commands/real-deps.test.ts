@@ -13,6 +13,36 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+
+const TAR_BLOCK_SIZE = 512;
+
+/**
+ * Builds a minimal valid `.tar.gz` fixture containing one file entry
+ * wrapped in a `<wrapperDirName>/` directory, mirroring the GitHub
+ * codeload archive shape `real-deps.ts`'s `placeEngine`/`placeProjection`
+ * now actually extract (`extractTarGzToDir` with `stripComponents: 1`).
+ */
+function buildTarGzFixture(
+  wrapperDirName: string,
+  filePath: string,
+  fileContent: string,
+): Uint8Array {
+  const header = new Uint8Array(TAR_BLOCK_SIZE);
+  const name = `${wrapperDirName}/${filePath}`;
+  header.set(Buffer.from(name, 'utf8').subarray(0, 100), 0);
+  const contentBytes = Buffer.from(fileContent, 'utf8');
+  header.set(Buffer.from(contentBytes.length.toString(8).padStart(11, '0'), 'utf8'), 124);
+  header.set(Buffer.from('ustar\0', 'utf8'), 257);
+  header.set(Buffer.from('00', 'utf8'), 263);
+  const paddedContentLength = Math.ceil(contentBytes.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+  const paddedContent = new Uint8Array(paddedContentLength);
+  paddedContent.set(contentBytes, 0);
+  const tar = new Uint8Array(header.length + paddedContent.length + TAR_BLOCK_SIZE * 2);
+  tar.set(header, 0);
+  tar.set(paddedContent, header.length);
+  return gzipSync(Buffer.from(tar));
+}
 
 /**
  * Bug fix: `buildRealDeps()` used to hand `engine.ref`/`plugin.ref` (a bare
@@ -156,7 +186,11 @@ describe('buildRealDeps().pluginManager doctorFailures wiring', () => {
       known_failures: [],
       pin: null,
     };
-    await writeFile(join(projectRoot, 'aidlc.lock.json'), JSON.stringify(lockfile, null, 2), 'utf8');
+    await writeFile(
+      join(projectRoot, 'aidlc.lock.json'),
+      JSON.stringify(lockfile, null, 2),
+      'utf8',
+    );
     return projectRoot;
   }
 
@@ -222,7 +256,7 @@ describe('buildRealDeps().pluginManager doctorFailures wiring', () => {
 
       const result = await deps.pluginManager.remove('example-plugin');
 
-  const doctorCalls = calls.filter((c) => c.cmd === 'doctor-bin');
+      const doctorCalls = calls.filter((c) => c.cmd === 'doctor-bin');
       expect(doctorCalls).toHaveLength(1);
       expect(result.success).toBe(true);
     } finally {
@@ -278,9 +312,13 @@ describe('buildRealDeps() — remaining port coverage', () => {
   }
 
   test('engineInstaller.install() drives placeEngine/checkEngineDirectoryReplace/runCompose/loadLockfile/saveLockfile end-to-end', async () => {
-    const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+    const tarballBytes = buildTarGzFixture(
+      'aidlc-workflows-engine-ref',
+      'dist/claude/.claude/settings.json',
+      '{}',
+    );
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
-    const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const { fetchMock, spawnMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
     try {
       // checkEngineDirectoryReplace's backup step (BR2.1) copies the
@@ -308,9 +346,28 @@ describe('buildRealDeps() — remaining port coverage', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         'https://codeload.github.com/awslabs/aidlc-workflows/tar.gz/engine-ref',
       );
-      // placeEngine wrote the staged tarball bytes.
-      const staged = await readFile(join(projectRoot, '.claude', '.engine-claude-code.tar'));
-      expect(new Uint8Array(staged)).toEqual(tarballBytes);
+      // placeEngine actually extracted the tarball (not just staged the
+      // raw bytes) into the engine staging dir, stripping the GitHub
+      // codeload wrapper directory.
+      const extracted = await readFile(
+        join(
+          projectRoot,
+          '.aidlc-fleet',
+          'engine-src',
+          'dist',
+          'claude',
+          '.claude',
+          'settings.json',
+        ),
+        'utf8',
+      );
+      expect(extracted).toBe('{}');
+      // runCompose points the configured compose command at the extracted tree.
+      const composeCall = spawnMock.mock.calls.find(([cmd]) => cmd === 'compose-bin');
+      const composeEnv = composeCall?.[2] as { env?: Record<string, string> } | undefined;
+      expect(composeEnv?.env?.AIDLC_FLEET_ENGINE_SRC_DIR).toBe(
+        join(projectRoot, '.aidlc-fleet', 'engine-src'),
+      );
       // saveLockfile persisted the lockfile AND updated installed-state (engineRef).
       const lockfileRaw = await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8');
       expect(JSON.parse(lockfileRaw).engine.ref).toBe('engine-ref');
@@ -325,8 +382,52 @@ describe('buildRealDeps() — remaining port coverage', () => {
     }
   });
 
+  test('placeEngine leaves the existing engine-src staging dir intact when extraction fails', async () => {
+    // Guards against a "delete then extract" ordering: a malformed archive
+    // (or a filesystem error partway through extraction) must never leave
+    // AIDLC_FLEET_ENGINE_SRC_DIR empty/partial — runCompose and any retry
+    // still need to read a usable tree from a *previous* successful install.
+    const corruptTarballBytes = new TextEncoder().encode('not a valid gzip stream');
+    const sha256 = createHash('sha256').update(corruptTarballBytes).digest('hex');
+    const { restoreFetch } = installEnvironmentMocks(corruptTarballBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const stagingDir = join(projectRoot, '.aidlc-fleet', 'engine-src');
+      await mkdir(stagingDir, { recursive: true });
+      await writeFile(join(stagingDir, 'previously-installed.txt'), 'from a prior good install');
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+        doctorCommand: ['doctor-bin'],
+        engineRepo: 'awslabs/aidlc-workflows',
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+          { harness: 'claude-code', force: true, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow();
+
+      // The previous, still-good staging tree survives the failed install.
+      const survived = await readFile(join(stagingDir, 'previously-installed.txt'), 'utf8');
+      expect(survived).toBe('from a prior good install');
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   test('pluginManager.add() drives placeProjection/regenerateSessionStartHook end-to-end', async () => {
-    const tarballBytes = new TextEncoder().encode('plugin-tarball-bytes');
+    const tarballBytes = buildTarGzFixture(
+      'example-plugin-plugin-ref',
+      'plugin.json',
+      '{"ok":true}',
+    );
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
     const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
@@ -376,9 +477,10 @@ describe('buildRealDeps() — remaining port coverage', () => {
         'https://codeload.github.com/org/example-plugin/tar.gz/plugin-ref',
       );
       const projection = await readFile(
-        join(projectRoot, '.claude', 'plugins', 'example-plugin', '.projection.tar'),
+        join(projectRoot, '.claude', 'plugins', 'example-plugin', 'plugin.json'),
+        'utf8',
       );
-      expect(new Uint8Array(projection)).toEqual(tarballBytes);
+      expect(projection).toBe('{"ok":true}');
       const hook = await readFile(
         join(projectRoot, '.claude', 'hooks', 'session-start.sh'),
         'utf8',
