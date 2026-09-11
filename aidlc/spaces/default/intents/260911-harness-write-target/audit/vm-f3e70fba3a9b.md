@@ -1704,3 +1704,125 @@
 **Duration ms**: 3630
 
 ---
+
+## Human Turn
+**Timestamp**: 2026-09-11T23:28:25Z
+**Event**: HUMAN_TURN
+**Session**: 59d34edf-baec-524c-bb48-4dc6efcaf23c
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-11T23:28:45Z
+**Event**: SENSOR_FIRED
+**Fire id**: b5c12ec3
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-11T23:28:47Z
+**Event**: SENSOR_PASSED
+**Fire id**: b5c12ec3
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.ts
+**Duration ms**: 1342
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-11T23:28:56Z
+**Event**: SENSOR_FIRED
+**Fire id**: d4f95f4e
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.ts
+
+---
+
+## Sensor Failed
+**Timestamp**: 2026-09-11T23:28:58Z
+**Event**: SENSOR_FAILED
+**Fire id**: d4f95f4e
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.ts
+**Detail path**: aidlc/spaces/default/intents/260911-harness-write-target/.aidlc-sensors/build-and-test/type-check-d4f95f4e.md
+**Findings count**: 1
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-11T23:29:04Z
+**Event**: SENSOR_FIRED
+**Fire id**: 4c34103c
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-11T23:29:05Z
+**Event**: SENSOR_PASSED
+**Fire id**: 4c34103c
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.ts
+**Duration ms**: 1117
+
+---
+
+## Artifact Updated
+**Timestamp**: 2026-09-11T23:29:18Z
+**Event**: ARTIFACT_UPDATED
+**Tool**: Edit
+**File**: <project-dir>/aidlc/spaces/default/intents/260911-harness-write-target/construction/code-generation/code-generation-plan.md
+**Context**: construction > code-generation > code-generation-plan.md
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-11T23:29:33Z
+**Event**: SENSOR_FIRED
+**Fire id**: 2d0b2f69
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-11T23:29:34Z
+**Event**: SENSOR_PASSED
+**Fire id**: 2d0b2f69
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.test.ts
+**Duration ms**: 1169
+
+---
+
+## Sensor Fired
+**Timestamp**: 2026-09-11T23:29:41Z
+**Event**: SENSOR_FIRED
+**Fire id**: 85c01402
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.test.ts
+
+---
+
+## Sensor Passed
+**Timestamp**: 2026-09-11T23:29:42Z
+**Event**: SENSOR_PASSED
+**Fire id**: 85c01402
+**Sensor ID**: type-check
+**Stage slug**: build-and-test
+**Output path**: src/commands/real-deps.test.ts
+**Duration ms**: 1094
+
+---
