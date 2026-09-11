@@ -1,0 +1,26 @@
+{
+  "stage": "code-generation",
+  "upstream_ids": ["issue-6-fr1", "issue-6-fr2", "issue-6-fr3", "issue-6-fr4"],
+  "coverage": [
+    {
+      "id": "issue-6-fr1",
+      "status": "OK",
+      "target": "src/commands/real-deps.ts (checkEngineDirectoryReplace, placeEngine, checkWriteAllowed, removeProjection, placeProjection, regenerateSessionStartHook closures) and src/orchestration/engine-installer.ts (EngineInstallerPorts.checkEngineDirectoryReplace)"
+    },
+    {
+      "id": "issue-6-fr2",
+      "status": "OK",
+      "target": "src/commands/real-deps.ts (resolveHarnessRoot, static import of .claude/tools/data/plugin-targets.json)"
+    },
+    {
+      "id": "issue-6-fr3",
+      "status": "OK",
+      "target": "src/commands/real-deps.ts (resolveHarnessRoot throw path) verified by src/commands/real-deps.test.ts describe('resolveHarnessRoot') and describe('issue #6: harness write-target resolution') unknown-harness tests"
+    },
+    {
+      "id": "issue-6-fr4",
+      "status": "OK",
+      "target": "src/commands/real-deps.test.ts describe('issue #6: harness write-target resolution') — engineInstaller.install()/pluginManager.add()/remove() exercised with harness 'cursor' vs 'claude', verified against a real filesystem"
+    }
+  ]
+}

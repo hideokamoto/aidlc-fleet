@@ -30,6 +30,30 @@ import { FileOwnershipGuard } from '../core/file-ownership-guard';
 import { EngineInstaller } from '../orchestration/engine-installer';
 import { PluginManager } from '../orchestration/plugin-manager';
 import type { CommandDeps } from './types';
+import pluginTargets from '../../.claude/tools/data/plugin-targets.json';
+
+type PluginTargetEntry = { harnessLeaf: string };
+const HARNESS_TARGETS = pluginTargets as Record<string, PluginTargetEntry>;
+
+/**
+ * Resolves `harness` (the Lockfile's `engine.harness` value) to its
+ * write-target root directory (e.g. `claude` -> `.claude`, `cursor` ->
+ * `.cursor`) via `.claude/tools/data/plugin-targets.json` — upstream's own
+ * mapping of harness to `harnessLeaf`, never redefined fleet-side (issue #6
+ * completion criterion 2). Throws for a harness with no entry in that file;
+ * there is no fallback to `.claude` (issue #6 completion criterion 3).
+ */
+export function resolveHarnessRoot(harness: string): string {
+  // Object.prototype.hasOwnProperty guards against `harness` naming an
+  // inherited key (e.g. "toString", "constructor") that would otherwise
+  // resolve to a truthy, non-plugin-targets value via plain [] lookup.
+  if (!Object.prototype.hasOwnProperty.call(HARNESS_TARGETS, harness)) {
+    throw new Error(
+      `real-deps: unknown harness "${harness}" — no entry in .claude/tools/data/plugin-targets.json (no .claude fallback)`,
+    );
+  }
+  return HARNESS_TARGETS[harness]!.harnessLeaf;
+}
 
 export interface RealDepsConfig {
   projectRoot: string;
@@ -179,6 +203,19 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
   const guard = new FileOwnershipGuard({ projectRoot: config.projectRoot });
   const successVerifier = new SuccessVerifier();
 
+  /**
+   * issue #6 (Step 9 Refactor): the four `pluginManager` closures below
+   * each need "load the Lockfile, resolve its engine.harness's root
+   * directory" — factored here once instead of repeating those two lines
+   * four times. Loads the Lockfile directly (it is already in scope via
+   * `lockfileStore`) rather than widening `PluginManagerPorts` to carry a
+   * harness, keeping the fix contained to this module.
+   */
+  async function resolveConfiguredHarnessRoot(): Promise<string> {
+    const lockfile = await lockfileStore.load();
+    return resolveHarnessRoot(lockfile.engine.harness);
+  }
+
   const engineInstaller = new EngineInstaller({
     projectRoot: config.projectRoot,
     fetchEngineTarball: (engine) =>
@@ -187,10 +224,11 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
         engine.sha256,
       ),
     checkEngineDirectoryReplace: async (opts) => {
-      await guard.checkEngineDirectoryReplace(join(config.projectRoot, '.claude'), opts);
+      const engineDir = join(config.projectRoot, resolveHarnessRoot(opts.harness));
+      await guard.checkEngineDirectoryReplace(engineDir, opts);
     },
     placeEngine: async (bytes, harness) => {
-      const engineDir = join(config.projectRoot, '.claude');
+      const engineDir = join(config.projectRoot, resolveHarnessRoot(harness));
       await mkdir(engineDir, { recursive: true });
       // Actual tarball extraction/install.ts wrapping is upstream's job
       // (never reimplemented here, project.md's Forbidden rule); this
@@ -235,8 +273,13 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       // inspects the path this module writes to (`placeProjection`
       // below), not a `<projectRoot>/plugins/<name>` path that was never
       // the real target.
+      //
+      // issue #6: the plugin write root is resolved from the seeded
+      // Lockfile's `engine.harness` (via plugin-targets.json), not
+      // hardcoded to `.claude`.
+      const harnessRoot = await resolveConfiguredHarnessRoot();
       await guard.checkWriteAllowed(
-        join(config.projectRoot, '.claude', 'plugins', pluginLogicalName),
+        join(config.projectRoot, harnessRoot, 'plugins', pluginLogicalName),
         { isInitialSeedCopy: false },
       );
     },
@@ -253,7 +296,11 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       // update path no longer calls this ahead of placeProjection (see
       // placeProjection below — CodeRabbit review, issue #5 PR #7) since
       // placeProjection now performs its own atomic old-tree replacement.
-      await rm(join(config.projectRoot, '.claude', 'plugins', name), {
+      //
+      // issue #6: resolved via the Lockfile's engine.harness, not
+      // hardcoded to `.claude`.
+      const harnessRoot = await resolveConfiguredHarnessRoot();
+      await rm(join(config.projectRoot, harnessRoot, 'plugins', name), {
         recursive: true,
         force: true,
       });
@@ -278,7 +325,11 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       // via `rm` + `rename` back to back. A failure at any point during
       // extraction leaves the live directory (old version, if any)
       // completely untouched and cleans up the staging directory.
-      const pluginsDir = join(config.projectRoot, '.claude', 'plugins');
+      //
+      // issue #6: resolved via the Lockfile's engine.harness, not
+      // hardcoded to `.claude`.
+      const harnessRoot = await resolveConfiguredHarnessRoot();
+      const pluginsDir = join(config.projectRoot, harnessRoot, 'plugins');
       const targetDir = join(pluginsDir, name);
       const stagingDir = join(pluginsDir, `.staging-${name}-${randomUUID()}`);
       await mkdir(stagingDir, { recursive: true });
@@ -296,8 +347,12 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       return { exitCode, dropsFileContent: await readDropsFile(config.projectRoot) };
     },
     regenerateSessionStartHook: async (pluginNames) => {
-      const hookPath = join(config.projectRoot, '.claude', 'hooks', 'session-start.sh');
-      await mkdir(join(config.projectRoot, '.claude', 'hooks'), { recursive: true });
+      // issue #6: resolved via the Lockfile's engine.harness, not
+      // hardcoded to `.claude`.
+      const harnessRoot = await resolveConfiguredHarnessRoot();
+      const hooksDir = join(config.projectRoot, harnessRoot, 'hooks');
+      const hookPath = join(hooksDir, 'session-start.sh');
+      await mkdir(hooksDir, { recursive: true });
       const body = pluginNames.map((name) => `# BEGIN ${name}\n# END ${name}`).join('\n');
       await writeFile(hookPath, `#!/bin/sh\n${body}\n`, 'utf8');
     },

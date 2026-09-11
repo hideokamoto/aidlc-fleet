@@ -27,7 +27,7 @@ export interface LockfileEngine {
   version: string;
   /** Tarball hash verified at install time. */
   sha256: string;
-  /** Which harness this install targets, e.g. "cursor", "claude-code". */
+  /** Which harness this install targets, e.g. "cursor", "claude". */
   harness: string;
   /** ISO-8601 install timestamp. */
   installed_at: string;
