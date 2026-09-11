@@ -16,10 +16,12 @@
  * `.drops` file location `SuccessVerifier` scans) — each is called out
  * inline and in `code-summary.md`.
  */
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ChannelClient } from '../io/channel-client';
+import { extractTarGz } from '../io/tar-extract';
 import { LockfileStore, LockfileAbsentError, LockfileMalformedError } from '../io/lockfile-store';
 import { VersionGate } from '../core/version-gate';
 import { SuccessVerifier } from '../core/success-verifier';
@@ -224,10 +226,19 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
     projectRoot: config.projectRoot,
     fetchPluginTarball: (plugin) =>
       channelClient.fetchTarball(buildTarballUrl(plugin.repo, plugin.ref), plugin.sha256),
-    checkWriteAllowed: async (targetPath) => {
-      await guard.checkWriteAllowed(join(config.projectRoot, targetPath), {
-        isInitialSeedCopy: false,
-      });
+    checkWriteAllowed: async (pluginLogicalName) => {
+      // issue #5 (FR3.2): `PluginManager.pluginDirLabel()` now returns
+      // only the plugin's logical name (FR3.1) — this integration-glue
+      // closure is responsible for completing it into the real physical
+      // write target (`.claude/plugins/<name>`) before handing it to
+      // `FileOwnershipGuard`, so the symlink check (M4, BR2.4) actually
+      // inspects the path this module writes to (`placeProjection`
+      // below), not a `<projectRoot>/plugins/<name>` path that was never
+      // the real target.
+      await guard.checkWriteAllowed(
+        join(config.projectRoot, '.claude', 'plugins', pluginLogicalName),
+        { isInitialSeedCopy: false },
+      );
     },
     loadLockfile: () => lockfileStore.load(),
     saveLockfile: async (lockfile) => {
@@ -237,15 +248,48 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       await writeInstalledState(config.projectRoot, { ...state, pluginRefs });
     },
     removeProjection: async (name) => {
+      // FR2.1: recursively removes the entire extracted plugin tree.
+      // Used directly by PluginManager.remove(); PluginManager.add()'s
+      // update path no longer calls this ahead of placeProjection (see
+      // placeProjection below — CodeRabbit review, issue #5 PR #7) since
+      // placeProjection now performs its own atomic old-tree replacement.
       await rm(join(config.projectRoot, '.claude', 'plugins', name), {
         recursive: true,
         force: true,
       });
     },
     placeProjection: async (name, bytes) => {
-      const dir = join(config.projectRoot, '.claude', 'plugins', name);
-      await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, '.projection.tar'), bytes);
+      // issue #5 (FR1.1): actually extract the verified gzip'd tar bytes
+      // into a readable file tree, instead of writing the raw archive
+      // bytes to `.projection.tar` (the original bug — upstream compose
+      // never got a usable plugin directory). `extractTarGz` handles
+      // gunzip, ustar parsing, wrapper-directory stripping (FR1.3), and
+      // tar-slip path validation (FR4) itself.
+      //
+      // CodeRabbit review (PR #7) flagged two related data-integrity gaps
+      // in extracting straight into the live `.claude/plugins/<name>`
+      // directory: (1) a tarball whose entries conflict on the filesystem
+      // (e.g. `a` as a file, then `a/b` needing `a` to be a directory)
+      // could leave a partially-written live tree, and (2) BR4.1's
+      // previous "remove old, then extract new" sequencing meant a
+      // mid-extraction failure lost the old, working version entirely.
+      // Fix: extract fully into a staging directory first; only once
+      // extraction succeeds completely do we replace the live directory,
+      // via `rm` + `rename` back to back. A failure at any point during
+      // extraction leaves the live directory (old version, if any)
+      // completely untouched and cleans up the staging directory.
+      const pluginsDir = join(config.projectRoot, '.claude', 'plugins');
+      const targetDir = join(pluginsDir, name);
+      const stagingDir = join(pluginsDir, `.staging-${name}-${randomUUID()}`);
+      await mkdir(stagingDir, { recursive: true });
+      try {
+        await extractTarGz(bytes, stagingDir);
+      } catch (cause) {
+        await rm(stagingDir, { recursive: true, force: true });
+        throw cause;
+      }
+      await rm(targetDir, { recursive: true, force: true });
+      await rename(stagingDir, targetDir);
     },
     runCompose: async (env) => {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);

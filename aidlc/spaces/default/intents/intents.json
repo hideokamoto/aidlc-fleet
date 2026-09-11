@@ -5,5 +5,12 @@
     "dirName": "260907-distribution-cli",
     "scope": "aidlc-distribution-cli",
     "status": "complete"
+  },
+  {
+    "uuid": "01a08b68-78a2-7f0c-81ce-a6a6952f83b6",
+    "slug": "plugin-tarball-extract",
+    "dirName": "260910-plugin-tarball-extract",
+    "scope": "bugfix",
+    "status": "complete"
   }
 ]
