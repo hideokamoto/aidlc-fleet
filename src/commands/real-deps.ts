@@ -32,17 +32,17 @@ import { PluginManager } from '../orchestration/plugin-manager';
 import type { CommandDeps } from './types';
 import pluginTargets from '../../.claude/tools/data/plugin-targets.json';
 
-/**
- * issue #6: 書き込み先が `.claude` にハードコードされており、Claude Code 以外
- * のハーネスに配布できなかったバグの修正。`.claude/tools/data/plugin-targets.json`
- * （upstream が保有する、7ハーネス分の `harnessLeaf` 定義を持つ唯一のマッピン
- * グ）を静的 JSON import で参照し、fleet 側では置き場所マッピングを再定義し
- * ない（issue #6 完了条件2）。未知の harness 値は `.claude` へフォールバック
- * せず、明示的に失敗する（issue #6 完了条件3）。
- */
 type PluginTargetEntry = { harnessLeaf: string };
 const HARNESS_TARGETS = pluginTargets as Record<string, PluginTargetEntry>;
 
+/**
+ * Resolves `harness` (the Lockfile's `engine.harness` value) to its
+ * write-target root directory (e.g. `claude` -> `.claude`, `cursor` ->
+ * `.cursor`) via `.claude/tools/data/plugin-targets.json` — upstream's own
+ * mapping of harness to `harnessLeaf`, never redefined fleet-side (issue #6
+ * completion criterion 2). Throws for a harness with no entry in that file;
+ * there is no fallback to `.claude` (issue #6 completion criterion 3).
+ */
 export function resolveHarnessRoot(harness: string): string {
   const entry = HARNESS_TARGETS[harness];
   if (!entry) {
