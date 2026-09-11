@@ -44,13 +44,15 @@ const HARNESS_TARGETS = pluginTargets as Record<string, PluginTargetEntry>;
  * there is no fallback to `.claude` (issue #6 completion criterion 3).
  */
 export function resolveHarnessRoot(harness: string): string {
-  const entry = HARNESS_TARGETS[harness];
-  if (!entry) {
+  // Object.prototype.hasOwnProperty guards against `harness` naming an
+  // inherited key (e.g. "toString", "constructor") that would otherwise
+  // resolve to a truthy, non-plugin-targets value via plain [] lookup.
+  if (!Object.prototype.hasOwnProperty.call(HARNESS_TARGETS, harness)) {
     throw new Error(
       `real-deps: unknown harness "${harness}" — no entry in .claude/tools/data/plugin-targets.json (no .claude fallback)`,
     );
   }
-  return entry.harnessLeaf;
+  return HARNESS_TARGETS[harness]!.harnessLeaf;
 }
 
 export interface RealDepsConfig {

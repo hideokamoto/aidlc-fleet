@@ -116,6 +116,12 @@ describe('resolveHarnessRoot', () => {
     const { resolveHarnessRoot } = await import('./real-deps');
     expect(() => resolveHarnessRoot('bogus-harness')).toThrow(/bogus-harness/);
   });
+
+  test('throws for an inherited Object.prototype key instead of resolving it as a harness (no prototype-pollution-style bypass)', async () => {
+    const { resolveHarnessRoot } = await import('./real-deps');
+    expect(() => resolveHarnessRoot('toString')).toThrow(/toString/);
+    expect(() => resolveHarnessRoot('constructor')).toThrow(/constructor/);
+  });
 });
 
 describe('parseDoctorOutput', () => {
@@ -1091,6 +1097,18 @@ describe('buildRealDeps() — remaining port coverage', () => {
           '{}',
           'utf8',
         );
+        // A sentinel under `.claude/` proves remove() with a cursor-targeted
+        // lockfile never touches the unrelated `.claude/` tree (the
+        // "`.claude/` untouched" contract this describe block's other tests
+        // already assert for install()/add()).
+        await mkdir(join(projectRoot, '.claude', 'plugins', 'example-plugin'), {
+          recursive: true,
+        });
+        await writeFile(
+          join(projectRoot, '.claude', 'plugins', 'example-plugin', 'sentinel'),
+          'untouched',
+          'utf8',
+        );
 
         const { buildRealDeps } = await import('./real-deps');
         const deps = buildRealDeps({
@@ -1106,6 +1124,11 @@ describe('buildRealDeps() — remaining port coverage', () => {
         await expect(
           readdir(join(projectRoot, '.cursor', 'plugins', 'example-plugin')),
         ).rejects.toThrow();
+        const sentinel = await readFile(
+          join(projectRoot, '.claude', 'plugins', 'example-plugin', 'sentinel'),
+          'utf8',
+        );
+        expect(sentinel).toBe('untouched');
       } finally {
         restoreFetch();
         await rm(projectRoot, { recursive: true, force: true });
