@@ -33,7 +33,7 @@ const channelEngine: ChannelEngine = {
 };
 
 interface RecordedCalls {
-  checkEngineDirectoryReplace: Array<{ force: boolean }>;
+  checkEngineDirectoryReplace: Array<{ force: boolean; harness: string }>;
   placeEngine: Array<[Uint8Array, string]>;
   runCompose: Array<Record<string, string>>;
   saveLockfile: Lockfile[];
@@ -53,7 +53,7 @@ function makePorts(overrides: Partial<EngineInstallerPorts> = {}): {
 
   const ports: EngineInstallerPorts = {
     fetchEngineTarball: async () => new TextEncoder().encode('engine-bytes'),
-    checkEngineDirectoryReplace: async (opts: { force: boolean }) => {
+    checkEngineDirectoryReplace: async (opts: { force: boolean; harness: string }) => {
       calls.checkEngineDirectoryReplace.push(opts);
     },
     placeEngine: async (bytes: Uint8Array, harness: string) => {
@@ -135,6 +135,17 @@ describe('EngineInstaller.install (init)', () => {
     const saved = calls.saveLockfile[0]!;
     expect(saved.engine_origin).toBe('old-ref');
     expect(saved.engine.ref).toBe('new-ref');
+  });
+
+  test('issue #6: checkEngineDirectoryReplace is called with the install options harness, not just force', async () => {
+    const { ports, calls } = makePorts();
+    const installer = new EngineInstaller(ports);
+    await installer.install(channelEngine, {
+      harness: 'cursor',
+      force: true,
+      isFirstInit: true,
+    });
+    expect(calls.checkEngineDirectoryReplace).toEqual([{ force: true, harness: 'cursor' }]);
   });
 
   test('--adopt records the adoption marker consumed by BR1.5', async () => {

@@ -93,6 +93,31 @@ describe('buildTarballUrl', () => {
   });
 });
 
+/**
+ * issue #6: 書き込み先が `.claude` にハードコードされており、他ハーネスへ
+ * 配布できないバグの修正。`resolveHarnessRoot` は upstream の
+ * `.claude/tools/data/plugin-targets.json`（7ハーネス分の `harnessLeaf`
+ * 定義）を静的 JSON import で参照し、fleet 側で置き場所マッピングを
+ * 再定義しない（完了条件2）。未知の harness は `.claude` へフォール
+ * バックせず明示的に失敗する（完了条件3）。
+ */
+describe('resolveHarnessRoot', () => {
+  test('resolves the "claude" harness key to ".claude" (plugin-targets.json harnessLeaf)', async () => {
+    const { resolveHarnessRoot } = await import('./real-deps');
+    expect(resolveHarnessRoot('claude')).toBe('.claude');
+  });
+
+  test('resolves a second, distinct harness key ("cursor") to ".cursor"', async () => {
+    const { resolveHarnessRoot } = await import('./real-deps');
+    expect(resolveHarnessRoot('cursor')).toBe('.cursor');
+  });
+
+  test('throws an explicit error for an unrecognized harness value (no .claude fallback)', async () => {
+    const { resolveHarnessRoot } = await import('./real-deps');
+    expect(() => resolveHarnessRoot('bogus-harness')).toThrow(/bogus-harness/);
+  });
+});
+
 describe('parseDoctorOutput', () => {
   test('treats each non-blank, non-comment line as one failure', async () => {
     const { parseDoctorOutput } = await import('./real-deps');
@@ -193,7 +218,7 @@ describe('buildRealDeps().pluginManager doctorFailures wiring', () => {
         ref: 'engine-ref',
         version: '0.1.0',
         sha256: 'deadbeef',
-        harness: 'claude-code',
+        harness: 'claude',
         installed_at: '2026-01-01T00:00:00.000Z',
       },
       engine_origin: '0.1.0',
@@ -353,7 +378,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
 
       const result = await deps.engineInstaller.install(
         { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
-        { harness: 'claude-code', force: true, isFirstInit: true, adopt: false },
+        { harness: 'claude', force: true, isFirstInit: true, adopt: false },
       );
 
       expect(result.success).toBe(true);
@@ -364,7 +389,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
         'https://codeload.github.com/awslabs/aidlc-workflows/tar.gz/engine-ref',
       );
       // placeEngine wrote the staged tarball bytes.
-      const staged = await readFile(join(projectRoot, '.claude', '.engine-claude-code.tar'));
+      const staged = await readFile(join(projectRoot, '.claude', '.engine-claude.tar'));
       expect(new Uint8Array(staged)).toEqual(tarballBytes);
       // saveLockfile persisted the lockfile AND updated installed-state (engineRef).
       const lockfileRaw = await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8');
@@ -413,7 +438,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
             ref: 'engine-ref',
             version: '0.1.0',
             sha256: 'deadbeef',
-            harness: 'claude-code',
+            harness: 'claude',
             installed_at: '2026-01-01T00:00:00.000Z',
           },
           engine_origin: '0.1.0',
@@ -504,7 +529,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
             ref: 'engine-ref',
             version: '0.1.0',
             sha256: 'deadbeef',
-            harness: 'claude-code',
+            harness: 'claude',
             installed_at: '2026-01-01T00:00:00.000Z',
           },
           engine_origin: '0.1.0',
@@ -632,7 +657,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
             ref: 'engine-ref',
             version: '0.1.0',
             sha256: 'deadbeef',
-            harness: 'claude-code',
+            harness: 'claude',
             installed_at: '2026-01-01T00:00:00.000Z',
           },
           engine_origin: '0.1.0',
@@ -743,7 +768,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
             ref: 'engine-ref',
             version: '0.1.0',
             sha256: 'deadbeef',
-            harness: 'claude-code',
+            harness: 'claude',
             installed_at: '2026-01-01T00:00:00.000Z',
           },
           engine_origin: '0.1.0',
@@ -839,7 +864,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
             ref: 'engine-ref',
             version: '0.1.0',
             sha256: 'deadbeef',
-            harness: 'claude-code',
+            harness: 'claude',
             installed_at: '2026-01-01T00:00:00.000Z',
           },
           engine_origin: '0.1.0',
@@ -916,6 +941,262 @@ describe('buildRealDeps() — remaining port coverage', () => {
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * issue #6 完了条件4: 2種類以上の harness を指定した統合テストで、それ
+   * ぞれ正しいディレクトリに配置されることを検証する。5箇所のハードコード
+   * （checkEngineDirectoryReplace, placeEngine, checkWriteAllowed,
+   * removeProjection, placeProjection, regenerateSessionStartHook）を
+   * `harness: 'cursor'` で駆動し、`.claude/` ではなく `.cursor/` 配下に
+   * 配置されることを real filesystem 上で確認する。
+   */
+  describe('issue #6: harness write-target resolution', () => {
+    function cursorLockfileJson(overrides: { plugins?: unknown[] } = {}) {
+      return JSON.stringify({
+        schema: 1,
+        channel: 'stable',
+        channel_commit: 'abc123',
+        engine: {
+          ref: 'engine-ref',
+          version: '0.1.0',
+          sha256: 'deadbeef',
+          harness: 'cursor',
+          installed_at: '2026-01-01T00:00:00.000Z',
+        },
+        engine_origin: '0.1.0',
+        plugins: overrides.plugins ?? [],
+        managed: [],
+        known_failures: [],
+        pin: null,
+      });
+    }
+
+    test('engineInstaller.install() with harness "cursor" places the engine under .cursor/, not .claude/', async () => {
+      const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+      const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+      const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+      const projectRoot = await makeEmptyProjectRoot();
+      try {
+        await mkdir(join(projectRoot, '.cursor'), { recursive: true });
+        const { buildRealDeps } = await import('./real-deps');
+        const deps = buildRealDeps({
+          projectRoot,
+          channelUrl: 'https://example.test/channel.json',
+          composeCommand: ['compose-bin'],
+          doctorCommand: ['doctor-bin'],
+          engineRepo: 'awslabs/aidlc-workflows',
+        });
+
+        const result = await deps.engineInstaller.install(
+          { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+          { harness: 'cursor', force: true, isFirstInit: true, adopt: false },
+        );
+
+        expect(result.success).toBe(true);
+        const staged = await readFile(join(projectRoot, '.cursor', '.engine-cursor.tar'));
+        expect(new Uint8Array(staged)).toEqual(tarballBytes);
+        // .claude/ must not be touched by a cursor-targeted install.
+        await expect(
+          readFile(join(projectRoot, '.claude', '.engine-cursor.tar')),
+        ).rejects.toThrow();
+      } finally {
+        restoreFetch();
+        await rm(projectRoot, { recursive: true, force: true });
+      }
+    });
+
+    test('pluginManager.add() with lockfile engine.harness "cursor" places the plugin projection and session-start hook under .cursor/', async () => {
+      const tarballBytes = buildPluginGzipTarball([
+        { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+        {
+          name: 'example-plugin-plugin-ref/plugin.json',
+          typeflag: '0',
+          content: '{"name":"example-plugin"}',
+        },
+      ]);
+      const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+      const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
+      const projectRoot = await makeEmptyProjectRoot();
+      try {
+        await writeFile(join(projectRoot, 'aidlc.lock.json'), cursorLockfileJson(), 'utf8');
+        const { buildRealDeps } = await import('./real-deps');
+        const deps = buildRealDeps({
+          projectRoot,
+          channelUrl: 'https://example.test/channel.json',
+          composeCommand: ['compose-bin'],
+          doctorCommand: ['doctor-bin'],
+        });
+
+        const result = await deps.pluginManager.add({
+          name: 'example-plugin',
+          repo: 'org/example-plugin',
+          ref: 'plugin-ref',
+          version: '1.0.0',
+          sha256,
+        });
+
+        expect(result.success).toBe(true);
+        expect(fetchMock).toHaveBeenCalledWith(
+          'https://codeload.github.com/org/example-plugin/tar.gz/plugin-ref',
+        );
+        const pluginJson = await readFile(
+          join(projectRoot, '.cursor', 'plugins', 'example-plugin', 'plugin.json'),
+          'utf8',
+        );
+        expect(pluginJson).toBe('{"name":"example-plugin"}');
+        const hook = await readFile(
+          join(projectRoot, '.cursor', 'hooks', 'session-start.sh'),
+          'utf8',
+        );
+        expect(hook).toContain('BEGIN example-plugin');
+        // .claude/ must not be touched by a cursor-targeted add().
+        await expect(readdir(join(projectRoot, '.claude'))).rejects.toThrow();
+      } finally {
+        restoreFetch();
+        await rm(projectRoot, { recursive: true, force: true });
+      }
+    });
+
+    test("pluginManager.remove() with lockfile engine.harness 'cursor' removes from .cursor/plugins/<name>", async () => {
+      const tarballBytes = buildPluginGzipTarball([
+        { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+        { name: 'example-plugin-plugin-ref/plugin.json', typeflag: '0', content: '{}' },
+      ]);
+      const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+      const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+      const projectRoot = await makeEmptyProjectRoot();
+      try {
+        await writeFile(
+          join(projectRoot, 'aidlc.lock.json'),
+          cursorLockfileJson({
+            plugins: [
+              {
+                name: 'example-plugin',
+                ref: 'plugin-ref',
+                version: '1.0.0',
+                sha256,
+                composed_at: '2026-01-01T00:00:00.000Z',
+                engine_version_at_compose: '0.1.0',
+              },
+            ],
+          }),
+          'utf8',
+        );
+        await mkdir(join(projectRoot, '.cursor', 'plugins', 'example-plugin'), {
+          recursive: true,
+        });
+        await writeFile(
+          join(projectRoot, '.cursor', 'plugins', 'example-plugin', 'plugin.json'),
+          '{}',
+          'utf8',
+        );
+
+        const { buildRealDeps } = await import('./real-deps');
+        const deps = buildRealDeps({
+          projectRoot,
+          channelUrl: 'https://example.test/channel.json',
+          composeCommand: ['compose-bin'],
+          doctorCommand: ['doctor-bin'],
+        });
+
+        const result = await deps.pluginManager.remove('example-plugin');
+        expect(result.success).toBe(true);
+
+        await expect(
+          readdir(join(projectRoot, '.cursor', 'plugins', 'example-plugin')),
+        ).rejects.toThrow();
+      } finally {
+        restoreFetch();
+        await rm(projectRoot, { recursive: true, force: true });
+      }
+    });
+
+    test('engineInstaller.install() with an unknown harness value rejects explicitly and writes nothing under any dot-directory', async () => {
+      const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+      const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+      const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+      const projectRoot = await makeEmptyProjectRoot();
+      try {
+        const { buildRealDeps } = await import('./real-deps');
+        const deps = buildRealDeps({
+          projectRoot,
+          channelUrl: 'https://example.test/channel.json',
+          composeCommand: ['compose-bin'],
+          doctorCommand: ['doctor-bin'],
+          engineRepo: 'awslabs/aidlc-workflows',
+        });
+
+        await expect(
+          deps.engineInstaller.install(
+            { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+            { harness: 'bogus-harness', force: true, isFirstInit: true, adopt: false },
+          ),
+        ).rejects.toThrow(/bogus-harness/);
+
+        const entries = await readdir(projectRoot);
+        expect(entries.filter((e) => e.startsWith('.'))).toEqual([]);
+      } finally {
+        restoreFetch();
+        await rm(projectRoot, { recursive: true, force: true });
+      }
+    });
+
+    test('pluginManager.add() with an unknown harness value in the seeded lockfile rejects explicitly and writes nothing', async () => {
+      const tarballBytes = buildPluginGzipTarball([
+        { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+        { name: 'example-plugin-plugin-ref/plugin.json', typeflag: '0', content: '{}' },
+      ]);
+      const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+      const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+      const projectRoot = await makeEmptyProjectRoot();
+      try {
+        await writeFile(
+          join(projectRoot, 'aidlc.lock.json'),
+          JSON.stringify({
+            schema: 1,
+            channel: 'stable',
+            channel_commit: 'abc123',
+            engine: {
+              ref: 'engine-ref',
+              version: '0.1.0',
+              sha256: 'deadbeef',
+              harness: 'bogus-harness',
+              installed_at: '2026-01-01T00:00:00.000Z',
+            },
+            engine_origin: '0.1.0',
+            plugins: [],
+            managed: [],
+            known_failures: [],
+            pin: null,
+          }),
+          'utf8',
+        );
+        const { buildRealDeps } = await import('./real-deps');
+        const deps = buildRealDeps({
+          projectRoot,
+          channelUrl: 'https://example.test/channel.json',
+          composeCommand: ['compose-bin'],
+          doctorCommand: ['doctor-bin'],
+        });
+
+        await expect(
+          deps.pluginManager.add({
+            name: 'example-plugin',
+            repo: 'org/example-plugin',
+            ref: 'plugin-ref',
+            version: '1.0.0',
+            sha256,
+          }),
+        ).rejects.toThrow(/bogus-harness/);
+
+        const entries = await readdir(projectRoot);
+        expect(entries.filter((e) => e.startsWith('.') && e !== '.' && e !== '..')).toEqual([]);
+      } finally {
+        restoreFetch();
+        await rm(projectRoot, { recursive: true, force: true });
+      }
+    });
   });
 
   test('stdout/stderr write to the real process streams', async () => {

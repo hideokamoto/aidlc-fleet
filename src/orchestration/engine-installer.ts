@@ -22,8 +22,8 @@ export interface ComposeResult {
 export interface EngineInstallerPorts {
   /** `EngineInstaller -> ChannelClient`: fetch the engine tarball. */
   fetchEngineTarball(engine: ChannelEngine): Promise<Uint8Array>;
-  /** `EngineInstaller -> FileOwnershipGuard`: enforce invariants during engine placement (BR2.1-BR2.4). Throws on violation. */
-  checkEngineDirectoryReplace(opts: { force: boolean }): Promise<void>;
+  /** `EngineInstaller -> FileOwnershipGuard`: enforce invariants during engine placement (BR2.1-BR2.4). Throws on violation. `harness` is threaded through so the caller can resolve the harness-specific engine-owned directory (issue #6) instead of assuming a single hardcoded location. */
+  checkEngineDirectoryReplace(opts: { force: boolean; harness: string }): Promise<void>;
   /** Place the verified engine bytes for `harness` (install.ts wrapper for Cursor, receipt-diff otherwise). */
   placeEngine(bytes: Uint8Array, harness: string): Promise<void>;
   /** Re-run upstream compose. */
@@ -69,7 +69,7 @@ export class EngineInstaller {
     const bytes = await this.ports.fetchEngineTarball(engine);
 
     // BR2.1-BR2.4: fail fast before any write if the guard refuses.
-    await this.ports.checkEngineDirectoryReplace({ force: options.force });
+    await this.ports.checkEngineDirectoryReplace({ force: options.force, harness: options.harness });
 
     await this.ports.placeEngine(bytes, options.harness);
 
