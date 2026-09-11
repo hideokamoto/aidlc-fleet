@@ -102,8 +102,9 @@
 - [ ] **Step 10**: `src/orchestration/plugin-manager.ts` の `pluginDirLabel()` を「プラグイン論理名のみを返す」実装に変更する（FR3.1, FR3.3）。
 - [ ] **Step 11**: [統合テスト更新] `src/commands/real-deps.test.ts` の既存テスト `pluginManager.add() drives placeProjection/regenerateSessionStartHook end-to-end` を更新し、実際の gzip 化 tar フィクスチャ（ラッパーディレクトリ付き）を使って展開後のファイルが実際に存在することを検証するよう書き換える（旧 `.projection.tar` 生書き込みアサーションを置き換え）。
 - [ ] **Step 12**: [新規統合テスト] `src/commands/real-deps.test.ts` に以下を追加する（team.md Mandated 実ファイルシステム統合テスト、NFR4 対応）:
-  - バージョン更新シナリオ: 異なる内容の tarball で `add()` を2回実行し、`removeProjection` が旧ファイルを完全に削除してから新ファイルが配置されることを実ファイルシステムで検証する（FR2.1, FR2.2）
+  - バージョン更新シナリオ: 異なる内容の tarball で `add()` を2回実行し、旧ファイルが完全に削除されてから新ファイルが配置されることを実ファイルシステムで検証する（FR2.1, FR2.2）
   - パス整合性シナリオ: `.claude/plugins/<name>` を事前にシンボリックリンクとして作成した状態で `add()` を実行し、`FileOwnershipGuard` が実際の書き込み先に対してシンボリックリンク違反を検出して拒否することを検証する（FR3.2, FR3.3 — 修正前はこの検査が誤ったパスに対して行われていたため検出できなかった）
+  - 展開失敗の残留ファイル検証シナリオ（FR4.2, NFR4）: ファイル/ディレクトリが競合する（`a` がファイルとして書かれた後に `a/b` がそのファイルをディレクトリとして要求する）不正な tarball で `add()` を実行して失敗させ、`readdir` で展開先ディレクトリを検証し、(1) 既存の旧バージョンが完全に無傷で残っていること、(2) ステージング用の一時ディレクトリが一切残っていないこと — の両方を確認する。CodeRabbit レビュー指摘（PR #7）を受けて追加: `placeProjection` は展開を一時ディレクトリで完了させ、成功時のみ実配置先へ原子的にスワップするよう変更した（`src/commands/real-deps.ts`）。これに伴い `PluginManager.add()` も、新バージョンの検証前に旧バージョンを削除する事前 `removeProjection` 呼び出しを廃止した（`src/orchestration/plugin-manager.ts`）。
 - [ ] **Step 13**: `bun test src/io/tar-extract.test.ts src/commands/real-deps.test.ts src/orchestration/plugin-manager.test.ts` を実行し、全テストが green であることを確認する。
 - [ ] **Step 14**: `bun test --coverage src/` を実行し、`src/io/tar-extract.ts` と変更した `src/commands/real-deps.ts` / `src/orchestration/plugin-manager.ts` が 80% ライン・カバレッジ床（bunfig.toml）を満たすことを確認する。
 - [ ] **Step 15**: ドキュメント/コメント整理（`real-deps.ts` の `placeProjection`/`removeProjection` 近傍コメントを、issue #5 修正後の実際の挙動に合わせて更新する）とトレーサビリティ（`traceability.json`）の作成。
@@ -125,9 +126,10 @@
 
 - **新規**: `src/io/tar-extract.ts`
 - **新規**: `src/io/tar-extract.test.ts`
-- **変更**: `src/commands/real-deps.ts`（`placeProjection`, `pluginManager.checkWriteAllowed` クロージャ）
-- **変更**: `src/commands/real-deps.test.ts`（既存テスト更新 + 新規統合テスト2件）
-- **変更**: `src/orchestration/plugin-manager.ts`（`pluginDirLabel()`）
+- **変更**: `src/commands/real-deps.ts`（`placeProjection`, `pluginManager.checkWriteAllowed` クロージャ。CodeRabbit レビュー対応で `placeProjection` はステージング一時ディレクトリ + 原子的スワップ方式に変更）
+- **変更**: `src/commands/real-deps.test.ts`（既存テスト更新 + 新規統合テスト3件）
+- **変更**: `src/orchestration/plugin-manager.ts`（`pluginDirLabel()`。CodeRabbit レビュー対応で `add()` の事前 `removeProjection` 呼び出しを廃止）
+- **変更**: `src/orchestration/plugin-manager.test.ts`（BR4.1 の期待値を新しい atomic placement 契約に合わせて更新）
 
 ## Review
 

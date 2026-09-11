@@ -591,6 +591,130 @@ describe('buildRealDeps() — remaining port coverage', () => {
   });
 
   /**
+   * CodeRabbit review (PR #7, issue #5) — two related atomicity gaps:
+   * (1) `extractTarGz` writing directly into the live plugin directory
+   * could leave a partial tree if an entry conflicts with one already
+   * written (e.g. a file `a` followed by an entry needing `a` to be a
+   * directory); (2) `PluginManager.add()` used to remove the old
+   * projection before validating the new one, so a mid-extraction
+   * failure lost a working old version entirely. Fix: `placeProjection`
+   * extracts fully into a staging directory first and only swaps it into
+   * the live location once extraction succeeds completely (real-deps.ts).
+   * This test drives that against the real filesystem: an existing,
+   * working v1 projection, an `add()` with a tarball whose entries
+   * conflict on disk (so extraction fails partway through), and asserts
+   * the old v1 tree is completely untouched afterward and no staging
+   * directory is left behind.
+   */
+  test('add() で展開に失敗するアーカイブを渡しても、既存プラグインは変更されず、ステージングディレクトリも残らない（BR4.1 atomic placement）', async () => {
+    const goodTarball = buildPluginGzipTarball([
+      { name: 'example-plugin-ref1/', typeflag: '5' },
+      { name: 'example-plugin-ref1/keep.txt', typeflag: '0', content: 'v1 content' },
+    ]);
+    // Conflicting entries: `a` is written as a plain file, then a later
+    // entry needs `a` to be a directory (`a/b`) — `mkdir('a', {recursive:
+    // true})` throws ENOTDIR because `a` already exists as a file, so
+    // extraction fails after partially writing into the staging dir.
+    const conflictingTarball = buildPluginGzipTarball([
+      { name: 'example-plugin-ref2/', typeflag: '5' },
+      { name: 'example-plugin-ref2/a', typeflag: '0', content: 'x' },
+      { name: 'example-plugin-ref2/a/b', typeflag: '0', content: 'y' },
+    ]);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await writeFile(
+        join(projectRoot, 'aidlc.lock.json'),
+        JSON.stringify({
+          schema: 1,
+          channel: 'stable',
+          channel_commit: 'abc123',
+          engine: {
+            ref: 'engine-ref',
+            version: '0.1.0',
+            sha256: 'deadbeef',
+            harness: 'claude-code',
+            installed_at: '2026-01-01T00:00:00.000Z',
+          },
+          engine_origin: '0.1.0',
+          plugins: [],
+          managed: [],
+          known_failures: [],
+          pin: null,
+        }),
+        'utf8',
+      );
+
+      // 1回目: v1 を正常に配置する。
+      {
+        const sha256 = createHash('sha256').update(goodTarball).digest('hex');
+        const { restoreFetch } = installEnvironmentMocks(goodTarball);
+        try {
+          const { buildRealDeps } = await import('./real-deps');
+          const deps = buildRealDeps({
+            projectRoot,
+            channelUrl: 'https://example.test/channel.json',
+            composeCommand: ['compose-bin'],
+            doctorCommand: ['doctor-bin'],
+          });
+          const result = await deps.pluginManager.add({
+            name: 'example-plugin',
+            repo: 'org/example-plugin',
+            ref: 'ref1',
+            version: '1.0.0',
+            sha256,
+          });
+          expect(result.success).toBe(true);
+        } finally {
+          restoreFetch();
+        }
+      }
+
+      // 2回目: 競合するアーカイブで add() を実行し、失敗することを確認する。
+      {
+        const sha256 = createHash('sha256').update(conflictingTarball).digest('hex');
+        const { restoreFetch } = installEnvironmentMocks(conflictingTarball);
+        try {
+          const { buildRealDeps } = await import('./real-deps');
+          const deps = buildRealDeps({
+            projectRoot,
+            channelUrl: 'https://example.test/channel.json',
+            composeCommand: ['compose-bin'],
+            doctorCommand: ['doctor-bin'],
+          });
+          await expect(
+            deps.pluginManager.add({
+              name: 'example-plugin',
+              repo: 'org/example-plugin',
+              ref: 'ref2',
+              version: '2.0.0',
+              sha256,
+            }),
+          ).rejects.toThrow();
+        } finally {
+          restoreFetch();
+        }
+      }
+
+      // 旧バージョン（v1）が完全に無傷で残っている。
+      const survivingEntries = await readdir(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin'),
+      );
+      expect(survivingEntries).toEqual(['keep.txt']);
+      const survivingFile = await readFile(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin', 'keep.txt'),
+        'utf8',
+      );
+      expect(survivingFile).toBe('v1 content');
+
+      // ステージングディレクトリが残っていない。
+      const pluginsDirEntries = await readdir(join(projectRoot, '.claude', 'plugins'));
+      expect(pluginsDirEntries).toEqual(['example-plugin']);
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
    * issue #5 Step 12（team.md Mandated 実ファイルシステム統合テスト、
    * NFR4）: パス整合性シナリオ — `.claude/plugins/<name>` を事前に
    * シンボリックリンクとして作成した状態で `add()` を実行し、

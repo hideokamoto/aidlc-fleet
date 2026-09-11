@@ -90,7 +90,7 @@ describe('PluginManager.add', () => {
     expect(saved.plugins.map((p) => p.name)).toContain('sample-plugin');
   });
 
-  test('BR4.1: removes a prior projection completely before placing the new one when one already exists', async () => {
+  test('BR4.1: places the new projection without a separate pre-removal call when one already exists (placeProjection performs the atomic swap itself)', async () => {
     const { ports, calls } = makePorts();
     const existingLockfile = makeLockfile({
       plugins: [
@@ -109,9 +109,17 @@ describe('PluginManager.add', () => {
     const manager = new PluginManager(ports);
     await manager.add(channelPlugin);
 
-    expect(calls.removeProjection).toEqual(['sample-plugin']);
-    // Removal must happen before placement so versions are never mixed.
-    expect(calls.removeProjection.length).toBeLessThanOrEqual(calls.placeProjection.length);
+    expect(calls.placeProjection).toHaveLength(1);
+    // No separate removeProjection call ahead of placement: the old
+    // version must stay intact until the new one is fully, successfully
+    // extracted — an eager pre-removal would delete a working old version
+    // before that is known (CodeRabbit review, issue #5 PR #7). The real
+    // `placeProjection` port implementation (real-deps.ts) performs the
+    // old-tree replacement atomically as part of placement itself, and
+    // that atomicity is verified against the real filesystem in
+    // real-deps.test.ts, not here (this test only exercises dispatch
+    // ordering against mocked ports).
+    expect(calls.removeProjection).toEqual([]);
   });
 
   test('runs compose with AIDLC_PROJECT_DIR set', async () => {
