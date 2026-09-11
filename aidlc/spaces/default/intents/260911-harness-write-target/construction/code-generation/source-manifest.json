@@ -1,0 +1,11 @@
+{
+  "stage": "code-generation",
+  "version": 1,
+  "writes": [
+    { "path": "src/commands/real-deps.ts" },
+    { "path": "src/commands/real-deps.test.ts" },
+    { "path": "src/orchestration/engine-installer.ts" },
+    { "path": "src/orchestration/engine-installer.test.ts" },
+    { "path": "src/types/lockfile.ts" }
+  ]
+}

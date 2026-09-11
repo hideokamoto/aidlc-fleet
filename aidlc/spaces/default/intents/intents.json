@@ -12,5 +12,12 @@
     "dirName": "260910-plugin-tarball-extract",
     "scope": "bugfix",
     "status": "complete"
+  },
+  {
+    "uuid": "01a0910a-e86b-798d-b511-7e76aa58e43b",
+    "slug": "harness-write-target",
+    "dirName": "260911-harness-write-target",
+    "scope": "harness-write-target-fix",
+    "status": "complete"
   }
 ]
