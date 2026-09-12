@@ -106,18 +106,24 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
     channelClient: { fetchChannel: async () => channel },
     versionGate: new VersionGate(),
     engineInstaller: {
-      install: async () => ({ success: true, compose: { exitCode: 0, dropsFileContent: 'ok\n' } }),
+      install: async () => ({
+        success: true,
+        compose: { exitCode: 0, dropsFileContent: 'ok\n' },
+        doctorConfigured: true,
+      }),
     },
     pluginManager: {
       add: async () => ({
         success: true,
         compose: { exitCode: 0, dropsFileContent: 'ok\n' },
         pluginSyncClassification: 'ok',
+        doctorConfigured: true,
       }),
       remove: async () => ({
         success: true,
         compose: { exitCode: 0, dropsFileContent: 'ok\n' },
         pluginSyncClassification: 'ok',
+        doctorConfigured: true,
       }),
     },
     driftDetector: new DriftDetector(),

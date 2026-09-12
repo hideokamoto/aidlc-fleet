@@ -50,8 +50,14 @@ export interface PluginManagerPorts {
   runCompose(env: Record<string, string>): Promise<ComposeResult>;
   /** Regenerate the sessionStart hook wrapper's BEGIN/END marker block set to exactly `pluginNames`. */
   regenerateSessionStartHook(pluginNames: string[]): Promise<void>;
-  /** Raw doctor failure identifiers, for `SuccessVerifier`'s third predicate. */
-  doctorFailures(): Promise<string[]>;
+  /**
+   * Raw doctor failure identifiers, for `SuccessVerifier`'s third
+   * predicate, plus `configured` (issue #14): whether a doctor command
+   * actually ran. Threaded through to `PluginOpResult.doctorConfigured`
+   * so callers can tell "doctor never ran" apart from "doctor ran, found
+   * nothing" instead of both looking like an identical clean pass.
+   */
+  doctorFailures(): Promise<{ failures: string[]; configured: boolean }>;
   /** Project root, exposed for `AIDLC_PROJECT_DIR`. Optional — ports may bake this in instead. */
   projectRoot?: string;
 }
@@ -60,6 +66,8 @@ export interface PluginOpResult {
   success: boolean;
   compose: ComposeResult;
   pluginSyncClassification: ReturnType<SuccessVerifier['classifyPluginSyncExit']>;
+  /** issue #14: whether a doctor command actually ran as part of this operation's verification. */
+  doctorConfigured: boolean;
 }
 
 export class PluginManager {
@@ -94,16 +102,18 @@ export class PluginManager {
     });
     const pluginSyncClassification = this.verifier.classifyPluginSyncExit(compose.exitCode);
 
-    const doctorFailures = await this.ports.doctorFailures();
+    const { failures: doctorFailures, configured: doctorConfigured } =
+      await this.ports.doctorFailures();
     const verification = this.verifier.verify({
       composeExitCode: compose.exitCode,
       dropsFileContent: compose.dropsFileContent,
       doctorFailures,
+      doctorConfigured,
       knownFailures: lockfile.known_failures,
     });
 
     if (!verification.success) {
-      return { success: false, compose, pluginSyncClassification };
+      return { success: false, compose, pluginSyncClassification, doctorConfigured };
     }
 
     const nextPlugin: LockfilePlugin = {
@@ -117,7 +127,7 @@ export class PluginManager {
     const nextPlugins = [...lockfile.plugins.filter((p) => p.name !== plugin.name), nextPlugin];
     await this.ports.saveLockfile({ ...lockfile, plugins: nextPlugins });
 
-    return { success: true, compose, pluginSyncClassification };
+    return { success: true, compose, pluginSyncClassification, doctorConfigured };
   }
 
   /** `plugin remove <name>` workflow (functional-spec.md). */
@@ -138,22 +148,24 @@ export class PluginManager {
     });
     const pluginSyncClassification = this.verifier.classifyPluginSyncExit(compose.exitCode);
 
-    const doctorFailures = await this.ports.doctorFailures();
+    const { failures: doctorFailures, configured: doctorConfigured } =
+      await this.ports.doctorFailures();
     const verification = this.verifier.verify({
       composeExitCode: compose.exitCode,
       dropsFileContent: compose.dropsFileContent,
       doctorFailures,
+      doctorConfigured,
       knownFailures: lockfile.known_failures,
     });
 
     if (!verification.success) {
-      return { success: false, compose, pluginSyncClassification };
+      return { success: false, compose, pluginSyncClassification, doctorConfigured };
     }
 
     const nextPlugins = lockfile.plugins.filter((p) => p.name !== pluginName);
     await this.ports.saveLockfile({ ...lockfile, plugins: nextPlugins });
 
-    return { success: true, compose, pluginSyncClassification };
+    return { success: true, compose, pluginSyncClassification, doctorConfigured };
   }
 
   /**

@@ -291,12 +291,8 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);
       return { exitCode, dropsFileContent: await readDropsFile(config.projectRoot) };
     },
-    doctorFailures: async () => {
-      const { failures } = await runDoctorCommand(config.doctorCommand, {
-        AIDLC_PROJECT_DIR: config.projectRoot,
-      });
-      return failures;
-    },
+    doctorFailures: () =>
+      runDoctorCommand(config.doctorCommand, { AIDLC_PROJECT_DIR: config.projectRoot }),
     loadLockfile: async () => {
       try {
         return await lockfileStore.load();
@@ -407,12 +403,8 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const body = pluginNames.map((name) => `# BEGIN ${name}\n# END ${name}`).join('\n');
       await writeFile(hookPath, `#!/bin/sh\n${body}\n`, 'utf8');
     },
-    doctorFailures: async () => {
-      const { failures } = await runDoctorCommand(config.doctorCommand, {
-        AIDLC_PROJECT_DIR: config.projectRoot,
-      });
-      return failures;
-    },
+    doctorFailures: () =>
+      runDoctorCommand(config.doctorCommand, { AIDLC_PROJECT_DIR: config.projectRoot }),
   });
 
   return {

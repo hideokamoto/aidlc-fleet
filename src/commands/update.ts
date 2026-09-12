@@ -36,6 +36,14 @@ export async function runUpdate(options: UpdateOptions, deps: CommandDeps): Prom
 
   if (result.success) {
     deps.stdout(`update: engine updated to ${channel.engine.ref}.`);
+    // issue #14: see init.ts's identical note — the four-part success
+    // check passes an unconfigured doctor by design, but that must be
+    // visible here rather than looking identical to a clean doctor run.
+    if (!result.doctorConfigured) {
+      deps.stdout(
+        'update: note — AIDLC_FLEET_DOCTOR_CMD is not configured, so the doctor check did not run.',
+      );
+    }
   } else {
     deps.stderr('update: install did not pass the four-part success criterion.');
   }

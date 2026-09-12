@@ -35,6 +35,12 @@ export async function runPluginAdd(pluginName: string, deps: CommandDeps): Promi
   const result = await deps.pluginManager.add(declared);
   if (result.success) {
     deps.stdout(`plugin add: ${pluginName} placed successfully.`);
+    // issue #14: see init.ts's identical note.
+    if (!result.doctorConfigured) {
+      deps.stdout(
+        'plugin add: note — AIDLC_FLEET_DOCTOR_CMD is not configured, so the doctor check did not run.',
+      );
+    }
   } else {
     deps.stderr(`plugin add: ${pluginName} did not pass the four-part success criterion.`);
   }
@@ -60,6 +66,12 @@ export async function runPluginRemove(
   const result = await deps.pluginManager.remove(pluginName);
   if (result.success) {
     deps.stdout(`plugin remove: ${pluginName} removed successfully.`);
+    // issue #14: see init.ts's identical note.
+    if (!result.doctorConfigured) {
+      deps.stdout(
+        'plugin remove: note — AIDLC_FLEET_DOCTOR_CMD is not configured, so the doctor check did not run.',
+      );
+    }
   } else {
     deps.stderr(`plugin remove: ${pluginName} did not pass the four-part success criterion.`);
   }

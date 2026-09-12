@@ -24,6 +24,14 @@ export async function runInit(options: InitOptions, deps: CommandDeps): Promise<
 
   if (result.success) {
     deps.stdout(`init: engine ${channel.engine.ref} placed successfully.`);
+    // issue #14: the four-part success check passes an unconfigured
+    // doctor by design (BR3.1's existing stance), but that must not look
+    // identical to a real, clean doctor run in this command's output.
+    if (!result.doctorConfigured) {
+      deps.stdout(
+        'init: note — AIDLC_FLEET_DOCTOR_CMD is not configured, so the doctor check did not run.',
+      );
+    }
   } else {
     deps.stderr('init: install did not pass the four-part success criterion.');
   }

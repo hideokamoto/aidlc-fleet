@@ -11,14 +11,14 @@ describe('runDoctor (CommandLayer)', () => {
 
   test('BR3.4: known_failures are filtered out before the exit code is decided', async () => {
     const { deps } = makeFakeDeps({ lockfile: makeLockfile({ known_failures: ['flaky-check'] }) });
-    deps.doctorRunner.run = async () => ({ failures: ['flaky-check'] });
+    deps.doctorRunner.run = async () => ({ failures: ['flaky-check'], configured: true });
     const result = await runDoctor(deps);
     expect(result.exitCode).toBe(0);
   });
 
   test('a genuine (non-known) failure yields a non-zero exit', async () => {
     const { deps } = makeFakeDeps();
-    deps.doctorRunner.run = async () => ({ failures: ['real-problem'] });
+    deps.doctorRunner.run = async () => ({ failures: ['real-problem'], configured: true });
     const result = await runDoctor(deps);
     expect(result.exitCode).not.toBe(0);
   });
