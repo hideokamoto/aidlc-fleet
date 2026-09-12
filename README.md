@@ -62,6 +62,15 @@ bun dist/cursor/install.ts <project>
 
 ## aidlc-fleet CLI (`bin/aidlc-fleet.ts`)
 
+`bin/aidlc-fleet.ts` と `src/` は、このリポジトリ自身が AI-DLC で開発している
+別プロダクト — `aidlc-fleet-cli`。エンジンとプラグインの配布を1つの
+**Channel** 宣言ファイルに集約し、`update`/`check` でプロジェクトをそれに
+同期させる配布用CLI(上記の `/aidlc` ワークフロー実行そのものとは別物)。
+
+```bash
+bun bin/aidlc-fleet.ts --help
+```
+
 `init`/`update`/`plugin add|remove` 等の変更系コマンドは、以下の4つの環境変数を
 参照する。優先順位は **環境変数 > プロジェクトローカルの `.aidlc-fleet.local.json`
 (gitignore対象) > 組み込みデフォルト値 > 未設定** の順(issue #18)。
@@ -87,3 +96,18 @@ bun bin/aidlc-fleet.ts config
 
 `status`/`doctor` は各変数の解決元(`env` / `local-config` / `default` /
 `unset`)を表示する。
+
+既知の懸念: `AIDLC_FLEET_DOCTOR_CMD` の既定値が呼ぶ
+`.claude/tools/aidlc-utility.ts` の `doctor` は、成功/失敗の各チェックを
+`✓`/`✗` 付きの人間向け複数行で出力する。`aidlc-fleet-cli` 側の
+`parseDoctorOutput()`(`src/commands/real-deps.ts`)は「空行と`#`行を除く
+各行を1件の失敗として扱う」という前提のため、成功行まで失敗として誤カウント
+される可能性がある(詳細は issue #19)。
+
+### Channel ファイル
+
+`AIDLC_FLEET_CHANNEL_URL` が指す先は HTTP(S) で取得できる JSON で、
+`schema`・`channel`・`engine`・`migration_boundaries`・`plugins` などの
+フィールドを持つ(詳細は [`examples/README.md`](examples/README.md))。
+サンプルは [`examples/channel.example.json`](examples/channel.example.json) —
+値はすべてダミーなので、自分の配布物に合わせて書き換えて配信すること。

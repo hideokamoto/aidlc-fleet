@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "channel": "stable",
+  "engine": {
+    "ref": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+    "version": "0.1.0",
+    "tag": null,
+    "sha256": "3f786850e387550fdab836ed7e6dc881de23001b2d5c58a2f4e2b60c3f6a6c8"
+  },
+  "migration_boundaries": [
+    {
+      "before": "0.2.0",
+      "action": "manual",
+      "notes": [
+        "Back up your project's settings.json and hooks before crossing this boundary.",
+        "See the release notes for the migration steps."
+      ]
+    },
+    {
+      "before": "0.1.0",
+      "action": "reject"
+    }
+  ],
+  "plugins": [
+    {
+      "name": "sample-plugin",
+      "repo": "example-org/sample-plugin",
+      "ref": "0123456789abcdef0123456789abcdef01234567",
+      "version": "1.0.0",
+      "sha256": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be0"
+    }
+  ]
+}
