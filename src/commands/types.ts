@@ -16,6 +16,7 @@ import type { SuccessVerifier } from '../core/success-verifier';
 import type { DriftDetector, InstalledState } from '../core/drift-detector';
 import type { PluginOpResult } from '../orchestration/plugin-manager';
 import type { EngineInstallResult, EngineInstallOptions } from '../orchestration/engine-installer';
+import type { ResolvedConfig, LocalConfigValues } from '../core/env-config-resolver';
 
 export type LockfileAccessState = 'present' | 'absent' | 'malformed';
 
@@ -56,6 +57,17 @@ export interface DoctorRunner {
   run(): Promise<{ failures: string[] }>;
 }
 
+/**
+ * Narrow port for the 4 `AIDLC_FLEET_*` env vars (issue #18):
+ * env > local-config file > built-in default > unset, plus the ability
+ * for `config` to prompt for and persist an unset value.
+ */
+export interface ConfigAccess {
+  resolveAll(): Promise<ResolvedConfig>;
+  saveLocal(values: LocalConfigValues): Promise<void>;
+  prompt(question: string): Promise<string>;
+}
+
 export interface CommandDeps {
   lockfileStore: LockfileAccess;
   channelClient: ChannelAccess;
@@ -66,6 +78,7 @@ export interface CommandDeps {
   successVerifier: SuccessVerifier;
   installedState: InstalledStateAccess;
   doctorRunner: DoctorRunner;
+  configAccess: ConfigAccess;
   /** Where output is written — injected so tests capture it instead of writing to real stdout. */
   stdout: (line: string) => void;
   stderr: (line: string) => void;
