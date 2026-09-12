@@ -46,53 +46,75 @@ bun test src/io/lockfile-store.test.ts
    per `team.md`'s mandate that file-ownership-adjacent I/O gets a real-FS
    integration test, not a mock-only test).
 
-### `src/core/env-config-resolver.test.ts` (core logic layer) — 8 tests
-Boundary matrix per variable (`AIDLC_FLEET_CHANNEL_URL` as the representative
-case, repeated for the other 3 where behavior could plausibly diverge):
+### `src/core/env-config-resolver.test.ts` (core logic layer) — 10 tests
+Priority order is env > local-config > built-in default > unset. Boundary
+matrix per variable (`AIDLC_FLEET_CHANNEL_URL` as the representative
+no-default case, `AIDLC_FLEET_ENGINE_REPO` as the representative
+has-default case, repeated for the other 2 where behavior could plausibly
+diverge):
 1. Env set, local-config unset → resolved value = env value, `source: 'env'`.
 2. Env unset, local-config set → resolved value = local value,
    `source: 'local-config'`.
 3. Both set → resolved value = env value (env wins), `source: 'env'`.
-4. Neither set → resolved value = `undefined`, `source: 'unset'`.
-5. Env set to empty string is treated as unset (falls through to
-   local-config), matching `bin/aidlc-fleet.ts`'s existing
+4. Neither set, variable has a built-in default (`AIDLC_FLEET_ENGINE_REPO`,
+   `AIDLC_FLEET_COMPOSE_CMD`, `AIDLC_FLEET_DOCTOR_CMD`) → resolved value =
+   the default, `source: 'default'`.
+5. Neither set, variable has NO built-in default
+   (`AIDLC_FLEET_CHANNEL_URL`) → resolved value = `undefined`,
+   `source: 'unset'`.
+6. Env or local-config set to the same string as the built-in default still
+   reports `source: 'env'` / `'local-config'` respectively, never
+   `'default'` (source reflects where the value actually came from, not
+   value equality).
+7. Env set to empty string is treated as unset (falls through to
+   local-config, then default), matching `bin/aidlc-fleet.ts`'s existing
    `?? ''` / truthiness convention for these variables.
-6. All 4 variables resolved independently in one call (no cross-variable
+8. All 4 variables resolved independently in one call (no cross-variable
    leakage — setting one does not affect another's source).
-7. `AIDLC_FLEET_COMPOSE_CMD` / `AIDLC_FLEET_DOCTOR_CMD` values remain raw
-   strings from the resolver (space-splitting stays the caller's job, as in
-   the current `bin/aidlc-fleet.ts`) — the resolver does not reshape values.
-8. Resolving with a local-config object that has extra/unknown keys ignores
-   them (forward-compatible with a hand-edited file).
+9. `AIDLC_FLEET_COMPOSE_CMD` / `AIDLC_FLEET_DOCTOR_CMD` values (whether from
+   env, local-config, or default) remain raw strings from the resolver
+   (space-splitting stays the caller's job, as in the current
+   `bin/aidlc-fleet.ts`) — the resolver does not reshape values.
+10. Resolving with a local-config object that has extra/unknown keys
+    ignores them (forward-compatible with a hand-edited file).
 
-### `src/commands/config.test.ts` (command layer) — 6 tests
+### `src/commands/config.test.ts` (command layer) — 7 tests
 1. All 4 variables already resolved from env → no prompts shown, local
    config file untouched.
-2. All 4 variables unset → prompts for all 4, saves all 4 answers.
-3. Only some variables unset → prompts only for those, existing
-   local-config entries for the already-resolved ones are preserved
-   (not overwritten with env values).
-4. Answering blank/empty at a prompt does not persist that key (avoids
+2. `AIDLC_FLEET_CHANNEL_URL` unset, the other 3 fall back to their built-in
+   defaults → prompts ONLY for `AIDLC_FLEET_CHANNEL_URL` (the one variable
+   with `source: 'unset'`); the 3 defaulted variables are never prompted for
+   and never written to the local config file.
+3. All 4 variables unset (including channel URL) → prompts only for
+   `AIDLC_FLEET_CHANNEL_URL` (the 3 with defaults still resolve, so they are
+   never `unset`), saves 1 answer.
+4. Only some variables are genuinely `unset` → prompts only for those,
+   existing local-config entries for the already-resolved ones are
+   preserved (not overwritten with env or default values).
+5. Answering blank/empty at a prompt does not persist that key (avoids
    writing an empty string that would later shadow a real value).
-5. Output after saving lists each variable and its resulting source, so the
-   user can confirm what was recorded.
-6. The saved file is written under `projectRoot`, never under `aidlc/`
+6. Output after saving lists each variable and its resulting source
+   (`env`/`local-config`/`default`/`unset`), so the user can confirm what
+   was recorded.
+7. The saved file is written under `projectRoot`, never under `aidlc/`
    (`ISS18-2`; project.md Forbidden — "NEVER `aidlc/` ワークスペース状態を
    読み書きしない").
 
-### `src/commands/doctor.test.ts` (extended) — 2 new tests
+### `src/commands/doctor.test.ts` (extended) — 3 new tests
 1. `doctor` output includes one line per required variable naming its
-   source (`env` / `local-config` / `unset`).
+   source (`env` / `local-config` / `default` / `unset`).
 2. An `unset` required variable is surfaced as a doctor failure (consistent
    with `bin/aidlc-fleet.ts`'s existing hard failure on missing
    `AIDLC_FLEET_CHANNEL_URL`), not silently ignored.
+3. A variable resolved from its built-in `default` is NOT surfaced as a
+   doctor failure (a default is a valid, working value, not a gap).
 
 ### `src/commands/status.test.ts` (extended) — 1 new test
 1. `status` output includes the per-variable source summary alongside the
    existing channel/engine/plugins/pin/drift lines.
 
-Total: 21 tests across 5 files — inside the Standard strategy's 5-8-per-component
-band (4 components × ~5 average, plus the two thin extensions).
+Total: 25 tests across 5 files — inside the Standard strategy's 5-8-per-component
+band (4 components × ~6 average, plus the two thin extensions).
 
 ## Mocking / stubbing guidance
 

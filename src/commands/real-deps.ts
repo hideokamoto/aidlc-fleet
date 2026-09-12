@@ -20,16 +20,19 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { ChannelClient } from '../io/channel-client';
 import { extractTarGz } from '../io/tar-extract';
 import { LockfileStore, LockfileAbsentError, LockfileMalformedError } from '../io/lockfile-store';
+import { LocalConfigStore } from '../io/local-config-store';
 import { VersionGate } from '../core/version-gate';
 import { SuccessVerifier } from '../core/success-verifier';
 import { DriftDetector } from '../core/drift-detector';
 import { FileOwnershipGuard } from '../core/file-ownership-guard';
+import { ENV_CONFIG_KEYS, resolveEnvConfig } from '../core/env-config-resolver';
 import { EngineInstaller } from '../orchestration/engine-installer';
 import { PluginManager } from '../orchestration/plugin-manager';
-import type { CommandDeps } from './types';
+import type { CommandDeps, ConfigAccess } from './types';
 import pluginTargets from '../../.claude/tools/data/plugin-targets.json';
 
 type PluginTargetEntry = { harnessLeaf: string };
@@ -197,11 +200,44 @@ async function readDropsFile(projectRoot: string): Promise<string> {
   }
 }
 
+/**
+ * issue #18: env > project-local `.aidlc-fleet.local.json` > built-in
+ * default > unset. `resolveAll` re-reads `process.env` and the local file
+ * on every call (never cached) so a `config` save is reflected immediately
+ * within the same process, and a change to the file between commands is
+ * always picked up.
+ */
+export function buildConfigAccess(projectRoot: string): ConfigAccess {
+  const localConfigStore = new LocalConfigStore(projectRoot);
+  return {
+    resolveAll: async () => {
+      const local = await localConfigStore.load();
+      const envSnapshot: Partial<Record<(typeof ENV_CONFIG_KEYS)[number], string>> = {};
+      for (const key of ENV_CONFIG_KEYS) {
+        envSnapshot[key] = process.env[key];
+      }
+      return resolveEnvConfig(envSnapshot, local);
+    },
+    saveLocal: async (values) => {
+      await localConfigStore.merge(values);
+    },
+    prompt: async (question) => {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        return await rl.question(question);
+      } finally {
+        rl.close();
+      }
+    },
+  };
+}
+
 export function buildRealDeps(config: RealDepsConfig): CommandDeps {
   const lockfileStore = new LockfileStore(config.projectRoot);
   const channelClient = new ChannelClient();
   const guard = new FileOwnershipGuard({ projectRoot: config.projectRoot });
   const successVerifier = new SuccessVerifier();
+  const configAccess = buildConfigAccess(config.projectRoot);
 
   /**
    * issue #6 (Step 9 Refactor): the four `pluginManager` closures below
@@ -397,6 +433,7 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
     doctorRunner: {
       run: () => runDoctorCommand(config.doctorCommand, { AIDLC_PROJECT_DIR: config.projectRoot }),
     },
+    configAccess,
     stdout: (line) => {
       process.stdout.write(`${line}\n`);
     },

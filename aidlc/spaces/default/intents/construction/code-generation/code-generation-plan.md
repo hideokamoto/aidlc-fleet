@@ -12,12 +12,31 @@ ad-hoc single-stage run (`consumes_absent` on the run-stage directive confirms
 both are expected absent). Requirement IDs below (`ISS18-*`) are minted from
 the issue body for traceability purposes.
 
-## Requirement IDs (from issue #18)
+## Requirement IDs (from issue #18, refined per human feedback 2026-09-12)
 
 - `ISS18-1`: Resolve each of the 4 vars (`AIDLC_FLEET_CHANNEL_URL`,
   `AIDLC_FLEET_ENGINE_REPO`, `AIDLC_FLEET_COMPOSE_CMD`,
-  `AIDLC_FLEET_DOCTOR_CMD`) with environment variable taking priority over a
-  project-local config file.
+  `AIDLC_FLEET_DOCTOR_CMD`) in priority order: environment variable >
+  project-local config file > built-in default (where one exists) > unset.
+- `ISS18-6` (added per human feedback): 3 of the 4 variables have one fixed,
+  correct value for an ordinary self-hosted AI-DLC install and should ship a
+  built-in default so a normal setup never has to answer for them —
+  confirmed against this repo's own source, not invented:
+  - `AIDLC_FLEET_ENGINE_REPO` → `awslabs/aidlc-workflows` — the canonical
+    upstream engine repo this project's own Forbidden rule already names
+    (`project.md`: "NEVER upstream（`awslabs/aidlc-workflows`）のファイルを
+    変更しない").
+  - `AIDLC_FLEET_COMPOSE_CMD` → `bun .claude/tools/aidlc-orchestrate.ts next
+    compose` — the exact command `.claude/tools/aidlc.ts`'s own `top-compose`
+    route table entry dispatches `compose` to (`prefix: ["next", "compose"]`,
+    `tool: TOOLS.orchestrate`).
+  - `AIDLC_FLEET_DOCTOR_CMD` → `bun .claude/tools/aidlc-utility.ts doctor` —
+    likewise the exact command `aidlc.ts`'s `top-passthrough` route table
+    entry dispatches `doctor` to (`tool: TOOLS.utility`).
+  - `AIDLC_FLEET_CHANNEL_URL` gets **no built-in default** — it names a
+    team's own hosted Channel distribution (no canonical value exists
+    anywhere in this repo or its docs to default to); it remains
+    required-with-no-fallback, same as today.
 - `ISS18-2`: Persist collected values to a CLI-owned local file only (never
   `aidlc/` workspace state, never an upstream file).
 - `ISS18-3`: Provide a `config` subcommand that interactively prompts for any
@@ -116,52 +135,59 @@ project's mandated command/core-logic/I-O separation
 
 ## Plan Steps
 
-- [ ] Step 1: Bootstrap — confirm the existing test runner works unit-scoped
+- [x] Step 1: Bootstrap — confirm the existing test runner works unit-scoped
   (`bun test <file>`); no new runner/config needed (`bun test` already
   configured project-wide). (Runner-ready-before-first-test obligation.)
-- [ ] Step 2: I/O layer — Red: write `src/io/local-config-store.test.ts`
+- [x] Step 2: I/O layer — Red: write `src/io/local-config-store.test.ts`
   covering read of an absent file, read of a valid file, read of a malformed
   file, and write-then-read round trip. Run and confirm failing
   (`Cannot find module`/`ReferenceError`). — `ISS18-2`
-- [ ] Step 3: I/O layer — Green: implement `src/io/local-config-store.ts`
+- [x] Step 3: I/O layer — Green: implement `src/io/local-config-store.ts`
   (`LocalConfigStore`: `load()` / `save()` against
   `.aidlc-fleet.local.json` in `projectRoot`, mirroring `LockfileStore`'s
   shape). Run tests green.
-- [ ] Step 4: I/O layer — Refactor: align error handling/typing with
+- [x] Step 4: I/O layer — Refactor: align error handling/typing with
   `LockfileStore`'s conventions; keep tests green.
-- [ ] Step 5: Core logic layer — Red: write
-  `src/core/env-config-resolver.test.ts` covering all 4 priority
-  combinations (env only, local-config only, both, neither) for each of the
-  4 variables, asserting both the resolved value and its `source`. Confirm
-  failing. — `ISS18-1`
-- [ ] Step 6: Core logic layer — Green: implement
+- [x] Step 5: Core logic layer — Red: write
+  `src/core/env-config-resolver.test.ts` covering the 4-level priority
+  (env only, local-config only, both, neither → default when one exists,
+  neither → `unset` when no default exists) for each of the 4 variables,
+  asserting both the resolved value and its `source`
+  (`env`/`local-config`/`default`/`unset`). Confirm failing. — `ISS18-1`,
+  `ISS18-6`
+- [x] Step 6: Core logic layer — Green: implement
   `src/core/env-config-resolver.ts` (pure function, no I/O, no `spawn` —
-  matches `team.md`'s layer-separation mandate). Run tests green.
-- [ ] Step 7: Core logic layer — Refactor: extract the 4-variable list as a
+  matches `team.md`'s layer-separation mandate), including the
+  `ENV_CONFIG_DEFAULTS` map for `AIDLC_FLEET_ENGINE_REPO` /
+  `AIDLC_FLEET_COMPOSE_CMD` / `AIDLC_FLEET_DOCTOR_CMD` (no entry for
+  `AIDLC_FLEET_CHANNEL_URL`). Run tests green.
+- [x] Step 7: Core logic layer — Refactor: extract the 4-variable list as a
   single source of truth reused by the command layer; keep tests green.
-- [ ] Step 8: Command layer — Red: write `src/commands/config.test.ts`
-  covering: prompts only for unset variables (mocked stdin), writes answers
-  via the injected `LocalConfigStore`-shaped port, and does not prompt for a
-  variable already resolved from env. Confirm failing. — `ISS18-3`
-- [ ] Step 9: Command layer — Green: implement `src/commands/config.ts`
+- [x] Step 8: Command layer — Red: write `src/commands/config.test.ts`
+  covering: prompts only for variables whose source is `unset` (mocked
+  stdin), writes answers via the injected `LocalConfigStore`-shaped port,
+  and does NOT prompt for a variable already resolved from env, local
+  config, or a built-in default. Confirm failing. — `ISS18-3`, `ISS18-6`
+- [x] Step 9: Command layer — Green: implement `src/commands/config.ts`
   (mirrors the `CommandDeps` pattern of `init.ts`/`status.ts`; the readline
   prompt port lives in `CommandDeps` so it is injectable/testable, per this
   project's I/O-boundary mandate).
-- [ ] Step 10: Command layer — Red: extend `src/commands/doctor.test.ts` and
+- [x] Step 10: Command layer — Red: extend `src/commands/doctor.test.ts` and
   `src/commands/status.test.ts` with cases asserting each variable's line
-  shows `(env)`, `(local-config)`, or `(unset)`. Confirm failing. — `ISS18-4`
-- [ ] Step 11: Command layer — Green: extend `doctor.ts`/`status.ts` output
+  shows `(env)`, `(local-config)`, `(default)`, or `(unset)`. Confirm
+  failing. — `ISS18-4`
+- [x] Step 11: Command layer — Green: extend `doctor.ts`/`status.ts` output
   and `CommandDeps` with the resolved-config summary; wire `bin/aidlc-fleet.ts`
   and `src/commands/real-deps.ts` to build the 4 values through
   `env-config-resolver` + `local-config-store` instead of reading
   `process.env` directly, and add the `config` case to the command switch.
   Run the full existing suite (`bun test src/`) to confirm no regression.
-- [ ] Step 12: Command layer — Refactor: keep `bin/aidlc-fleet.ts` a thin
+- [x] Step 12: Command layer — Refactor: keep `bin/aidlc-fleet.ts` a thin
   dispatcher (no branching logic beyond argv routing), consistent with its
   existing style.
-- [ ] Step 13: Environment/build configuration — add
+- [x] Step 13: Environment/build configuration — add
   `.aidlc-fleet.local.json` to `.gitignore`. — `ISS18-5`
-- [ ] Step 14: Documentation and traceability — update the "aidlc-fleet CLI"
+- [x] Step 14: Documentation and traceability — update the "aidlc-fleet CLI"
   README section (added by PR #17) with the `config` subcommand and the
   env-over-local-config priority rule; write `code-summary.md`,
   `source-manifest.json`, and `traceability.json`.

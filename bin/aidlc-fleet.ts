@@ -12,8 +12,9 @@ import { runPluginAdd, runPluginRemove } from '../src/commands/plugin';
 import { runPin, runUnpin } from '../src/commands/pin';
 import { runStatus } from '../src/commands/status';
 import { runDoctor } from '../src/commands/doctor';
+import { runConfig } from '../src/commands/config';
 import { hasFlag, positionals, readOption } from '../src/commands/argv';
-import { buildRealDeps } from '../src/commands/real-deps';
+import { buildRealDeps, buildConfigAccess } from '../src/commands/real-deps';
 
 const USAGE = `aidlc-fleet <command> [options]
 
@@ -27,12 +28,16 @@ Commands:
   unpin
   status
   doctor
+  config                    Prompt for and save any of the 4 env vars below that are still unset
 
-Environment:
-  AIDLC_FLEET_CHANNEL_URL   Channel declaration URL (required)
-  AIDLC_FLEET_COMPOSE_CMD   Upstream compose command, space-separated (required for mutating commands)
-  AIDLC_FLEET_DOCTOR_CMD    Upstream doctor command, space-separated (optional; unset means "no unaddressed failures")
-  AIDLC_FLEET_ENGINE_REPO   "owner/name" GitHub repo the engine tarball is fetched from (required for init/update)
+Environment (issue #18: env > project-local .aidlc-fleet.local.json > built-in default > unset):
+  AIDLC_FLEET_CHANNEL_URL   Channel declaration URL (required; no built-in default)
+  AIDLC_FLEET_COMPOSE_CMD   Upstream compose command, space-separated (default: "bun .claude/tools/aidlc-orchestrate.ts next compose")
+  AIDLC_FLEET_DOCTOR_CMD    Upstream doctor command, space-separated (default: "bun .claude/tools/aidlc-utility.ts doctor")
+  AIDLC_FLEET_ENGINE_REPO   "owner/name" GitHub repo the engine tarball is fetched from (default: "awslabs/aidlc-workflows")
+
+Run "aidlc-fleet config" to answer AIDLC_FLEET_CHANNEL_URL once and save it to
+.aidlc-fleet.local.json (gitignored) instead of re-exporting it every session.
 `;
 
 async function main(): Promise<number> {
@@ -44,21 +49,50 @@ async function main(): Promise<number> {
   }
 
   const projectRoot = process.cwd();
-  const channelUrl = process.env.AIDLC_FLEET_CHANNEL_URL ?? '';
-  const composeCommand = (process.env.AIDLC_FLEET_COMPOSE_CMD ?? '').split(' ').filter(Boolean);
-  const doctorCommand = (process.env.AIDLC_FLEET_DOCTOR_CMD ?? '').split(' ').filter(Boolean);
-  const engineRepo = process.env.AIDLC_FLEET_ENGINE_REPO ?? '';
+  const configAccess = buildConfigAccess(projectRoot);
+  const resolvedConfig = await configAccess.resolveAll();
+  const channelUrl = resolvedConfig.AIDLC_FLEET_CHANNEL_URL.value ?? '';
+  const composeCommand = (resolvedConfig.AIDLC_FLEET_COMPOSE_CMD.value ?? '')
+    .split(' ')
+    .filter(Boolean);
+  const doctorCommand = (resolvedConfig.AIDLC_FLEET_DOCTOR_CMD.value ?? '')
+    .split(' ')
+    .filter(Boolean);
+  const engineRepo = resolvedConfig.AIDLC_FLEET_ENGINE_REPO.value ?? '';
+  const [command, ...rest] = args;
+  const pos = positionals(rest);
+
+  // `config` is the one command that must run even when AIDLC_FLEET_CHANNEL_URL
+  // is unset — it is how a user answers it in the first place.
+  if (command === 'config') {
+    const deps = buildRealDeps({
+      projectRoot,
+      channelUrl,
+      composeCommand,
+      doctorCommand,
+      engineRepo,
+    });
+    const result = await runConfig(deps);
+    return result.exitCode;
+  }
+
   if (!channelUrl) {
-    process.stderr.write('aidlc-fleet: AIDLC_FLEET_CHANNEL_URL is not set.\n');
+    process.stderr.write(
+      'aidlc-fleet: AIDLC_FLEET_CHANNEL_URL is not set. Run "aidlc-fleet config" to set it once, or export it.\n',
+    );
     return 1;
   }
   // Only init/update actually fetch the engine tarball; other commands
   // (status, doctor, pin, plugin) never need engineRepo, so it is not
   // gated here — buildTarballUrl throws with a clear message if an
   // engine fetch is attempted without it.
-  const deps = buildRealDeps({ projectRoot, channelUrl, composeCommand, doctorCommand, engineRepo });
-  const [command, ...rest] = args;
-  const pos = positionals(rest);
+  const deps = buildRealDeps({
+    projectRoot,
+    channelUrl,
+    composeCommand,
+    doctorCommand,
+    engineRepo,
+  });
 
   switch (command) {
     case 'init': {

@@ -1,0 +1,12 @@
+{
+  "stage": "code-generation",
+  "upstream_ids": ["ISS18-1", "ISS18-2", "ISS18-3", "ISS18-4", "ISS18-5", "ISS18-6"],
+  "coverage": [
+    { "id": "ISS18-1", "status": "OK", "target": "src/core/env-config-resolver.ts" },
+    { "id": "ISS18-2", "status": "OK", "target": "src/io/local-config-store.ts" },
+    { "id": "ISS18-3", "status": "OK", "target": "src/commands/config.ts" },
+    { "id": "ISS18-4", "status": "OK", "target": "src/commands/doctor.ts" },
+    { "id": "ISS18-5", "status": "OK", "target": ".gitignore" },
+    { "id": "ISS18-6", "status": "OK", "target": "src/core/env-config-resolver.ts" }
+  ]
+}

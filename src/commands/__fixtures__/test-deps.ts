@@ -2,9 +2,10 @@
 import { VersionGate } from '../../core/version-gate';
 import { SuccessVerifier } from '../../core/success-verifier';
 import { DriftDetector } from '../../core/drift-detector';
-import type { CommandDeps, LockfileAccess } from '../types';
+import type { CommandDeps, LockfileAccess, ConfigAccess } from '../types';
 import type { Lockfile } from '../../types/lockfile';
 import type { Channel } from '../../types/channel';
+import { resolveEnvConfig, type LocalConfigValues } from '../../core/env-config-resolver';
 
 export function makeLockfile(overrides: Partial<Lockfile> = {}): Lockfile {
   return {
@@ -36,6 +37,12 @@ export interface FakeDepsOptions {
   lockfileState?: 'present' | 'absent' | 'malformed';
   lockfile?: Lockfile;
   channel?: Channel;
+  /** Env snapshot fed to the config resolver; defaults to empty (so the 3 defaulted vars resolve via `source: 'default'`). */
+  envConfig?: Partial<Record<string, string>>;
+  /** Local-config file contents fed to the config resolver; defaults to empty. */
+  localConfig?: LocalConfigValues;
+  /** Queued answers `configAccess.prompt` returns, one per call, in order. */
+  promptAnswers?: string[];
 }
 
 export function makeFakeDeps(options: FakeDepsOptions = {}): {
@@ -44,6 +51,8 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
   lockfileWrites: Lockfile[];
   pinCalls: string[];
   unpinCalls: { count: number };
+  configSaves: LocalConfigValues[];
+  promptQuestions: string[];
 } {
   const logs = { stdout: [] as string[], stderr: [] as string[] };
   const lockfileWrites: Lockfile[] = [];
@@ -52,6 +61,29 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
   const lockfileState = options.lockfileState ?? 'present';
   const lockfile = options.lockfile ?? makeLockfile();
   const channel = options.channel ?? makeChannel();
+
+  let localConfig: LocalConfigValues = { ...(options.localConfig ?? {}) };
+  const configSaves: LocalConfigValues[] = [];
+  const promptQuestions: string[] = [];
+  const promptAnswers = [...(options.promptAnswers ?? [])];
+
+  // Default envConfig supplies a channel URL so existing fixture consumers
+  // (doctor/status tests unrelated to issue #18) keep seeing an all-resolved,
+  // no-failure config baseline unless a test opts into a different one.
+  const envConfig = options.envConfig ?? {
+    AIDLC_FLEET_CHANNEL_URL: 'http://example.test/channel.json',
+  };
+  const configAccess: ConfigAccess = {
+    resolveAll: async () => resolveEnvConfig(envConfig, localConfig),
+    saveLocal: async (values) => {
+      configSaves.push(values);
+      localConfig = { ...localConfig, ...values };
+    },
+    prompt: async (question) => {
+      promptQuestions.push(question);
+      return promptAnswers.shift() ?? '';
+    },
+  };
 
   const lockfileStore: LockfileAccess = {
     loadClassified: async () => {
@@ -94,9 +126,10 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
       read: async () => ({ installedEngineRef: lockfile.engine.ref, installedPluginRefs: {} }),
     },
     doctorRunner: { run: async () => ({ failures: [] }) },
+    configAccess,
     stdout: (line) => logs.stdout.push(line),
     stderr: (line) => logs.stderr.push(line),
   };
 
-  return { deps, logs, lockfileWrites, pinCalls, unpinCalls };
+  return { deps, logs, lockfileWrites, pinCalls, unpinCalls, configSaves, promptQuestions };
 }

@@ -34,4 +34,29 @@ describe('runDoctor (CommandLayer)', () => {
     const result = await runDoctor(deps);
     expect(result.exitCode).toBe(1);
   });
+
+  test('issue #18: prints each config variable and its source', async () => {
+    const { deps, logs } = makeFakeDeps();
+    await runDoctor(deps);
+    const printed = logs.stdout.join('\n');
+    expect(printed).toContain('AIDLC_FLEET_CHANNEL_URL');
+    expect(printed).toContain('(env)');
+    expect(printed).toContain('AIDLC_FLEET_ENGINE_REPO');
+    expect(printed).toContain('(default)');
+  });
+
+  test('issue #18: an unset required variable (no env/local-config/default) is a doctor failure', async () => {
+    const { deps } = makeFakeDeps({ envConfig: {} });
+    const result = await runDoctor(deps);
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  test('issue #18: a variable resolved from its built-in default is NOT a doctor failure', async () => {
+    const { deps } = makeFakeDeps();
+    const result = await runDoctor(deps);
+    // The default fixture leaves ENGINE_REPO/COMPOSE_CMD/DOCTOR_CMD on
+    // their built-in defaults and only sets CHANNEL_URL via env — none of
+    // that should fail doctor on its own.
+    expect(result.exitCode).toBe(0);
+  });
 });

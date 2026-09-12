@@ -53,7 +53,9 @@ function buildPluginGzipTarball(
     const contentBytes = new TextEncoder().encode(content);
     chunks.push(buildTarHeader(entry.name, contentBytes.length, entry.typeflag));
     if (contentBytes.length > 0) {
-      const padded = new Uint8Array(Math.ceil(contentBytes.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE);
+      const padded = new Uint8Array(
+        Math.ceil(contentBytes.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE,
+      );
       padded.set(contentBytes);
       chunks.push(padded);
     }
@@ -242,7 +244,11 @@ describe('buildRealDeps().pluginManager doctorFailures wiring', () => {
       known_failures: [],
       pin: null,
     };
-    await writeFile(join(projectRoot, 'aidlc.lock.json'), JSON.stringify(lockfile, null, 2), 'utf8');
+    await writeFile(
+      join(projectRoot, 'aidlc.lock.json'),
+      JSON.stringify(lockfile, null, 2),
+      'utf8',
+    );
     return projectRoot;
   }
 
@@ -308,7 +314,7 @@ describe('buildRealDeps().pluginManager doctorFailures wiring', () => {
 
       const result = await deps.pluginManager.remove('example-plugin');
 
-  const doctorCalls = calls.filter((c) => c.cmd === 'doctor-bin');
+      const doctorCalls = calls.filter((c) => c.cmd === 'doctor-bin');
       expect(doctorCalls).toHaveLength(1);
       expect(result.success).toBe(true);
     } finally {
@@ -607,9 +613,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
       }
 
       // 旧ファイルは完全に削除され、新ファイルのみが存在する。
-      const finalEntries = await readdir(
-        join(projectRoot, '.claude', 'plugins', 'example-plugin'),
-      );
+      const finalEntries = await readdir(join(projectRoot, '.claude', 'plugins', 'example-plugin'));
       expect(finalEntries).toEqual(['new-only.txt']);
       const newFile = await readFile(
         join(projectRoot, '.claude', 'plugins', 'example-plugin', 'new-only.txt'),
@@ -1220,6 +1224,76 @@ describe('buildRealDeps() — remaining port coverage', () => {
         await rm(projectRoot, { recursive: true, force: true });
       }
     });
+  });
+
+  test('issue #18: buildConfigAccess().resolveAll() resolves env > local-config > default > unset against the real filesystem', async () => {
+    const projectRoot = await makeEmptyProjectRoot();
+    const originalChannelUrl = process.env.AIDLC_FLEET_CHANNEL_URL;
+    const originalEngineRepo = process.env.AIDLC_FLEET_ENGINE_REPO;
+    try {
+      delete process.env.AIDLC_FLEET_CHANNEL_URL;
+      process.env.AIDLC_FLEET_ENGINE_REPO = 'env-owner/env-repo';
+      await writeFile(
+        join(projectRoot, '.aidlc-fleet.local.json'),
+        JSON.stringify({ AIDLC_FLEET_CHANNEL_URL: 'http://local.example/channel.json' }),
+        'utf8',
+      );
+      const { buildConfigAccess } = await import('./real-deps');
+      const resolved = await buildConfigAccess(projectRoot).resolveAll();
+      expect(resolved.AIDLC_FLEET_CHANNEL_URL).toEqual({
+        value: 'http://local.example/channel.json',
+        source: 'local-config',
+      });
+      expect(resolved.AIDLC_FLEET_ENGINE_REPO).toEqual({
+        value: 'env-owner/env-repo',
+        source: 'env',
+      });
+      expect(resolved.AIDLC_FLEET_COMPOSE_CMD.source).toBe('default');
+      expect(resolved.AIDLC_FLEET_DOCTOR_CMD.source).toBe('default');
+    } finally {
+      if (originalChannelUrl === undefined) delete process.env.AIDLC_FLEET_CHANNEL_URL;
+      else process.env.AIDLC_FLEET_CHANNEL_URL = originalChannelUrl;
+      if (originalEngineRepo === undefined) delete process.env.AIDLC_FLEET_ENGINE_REPO;
+      else process.env.AIDLC_FLEET_ENGINE_REPO = originalEngineRepo;
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('issue #18: buildConfigAccess().saveLocal() persists to .aidlc-fleet.local.json under projectRoot, merging with existing entries', async () => {
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      const { buildConfigAccess } = await import('./real-deps');
+      const configAccess = buildConfigAccess(projectRoot);
+      await configAccess.saveLocal({
+        AIDLC_FLEET_CHANNEL_URL: 'http://first.example/channel.json',
+      });
+      await configAccess.saveLocal({ AIDLC_FLEET_ENGINE_REPO: 'someone/fork' });
+      const raw = await readFile(join(projectRoot, '.aidlc-fleet.local.json'), 'utf8');
+      expect(JSON.parse(raw)).toEqual({
+        AIDLC_FLEET_CHANNEL_URL: 'http://first.example/channel.json',
+        AIDLC_FLEET_ENGINE_REPO: 'someone/fork',
+      });
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('issue #18: buildConfigAccess().prompt() reads one line from the injected readline interface', async () => {
+    const questionMock = mock(async (_q: string) => 'typed-answer');
+    const closeMock = mock(() => undefined);
+    mock.module('node:readline/promises', () => ({
+      createInterface: () => ({ question: questionMock, close: closeMock }),
+    }));
+    const { buildConfigAccess } = await import('./real-deps');
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      const answer = await buildConfigAccess(projectRoot).prompt('Enter value: ');
+      expect(answer).toBe('typed-answer');
+      expect(questionMock).toHaveBeenCalledWith('Enter value: ');
+      expect(closeMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
   });
 
   test('stdout/stderr write to the real process streams', async () => {

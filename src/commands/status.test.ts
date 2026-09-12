@@ -36,4 +36,14 @@ describe('runStatus (CommandLayer)', () => {
     await runStatus(deps);
     expect(lockfileWrites).toHaveLength(0);
   });
+
+  test('issue #18: includes the per-variable config source summary', async () => {
+    const { deps, logs } = makeFakeDeps();
+    await runStatus(deps);
+    const printed = logs.stdout.join('\n');
+    expect(printed).toContain('AIDLC_FLEET_CHANNEL_URL');
+    expect(printed).toContain('(env)');
+    expect(printed).toContain('AIDLC_FLEET_DOCTOR_CMD');
+    expect(printed).toContain('(default)');
+  });
 });
