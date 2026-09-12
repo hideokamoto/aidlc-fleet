@@ -52,6 +52,18 @@ export interface InstalledStateAccess {
   read(): Promise<InstalledState>;
 }
 
+/**
+ * Best-effort default harness for `init` when `--harness` is omitted
+ * (issue #15): an existing harness-specific directory (e.g. `.claude/`)
+ * already in the project is a much stronger signal than a hardcoded
+ * default, so `init` uses it without asking. Returns `undefined` when
+ * nothing on disk says so, so the caller must ask the human instead of
+ * guessing and silently placing the engine in the wrong directory.
+ */
+export interface HarnessDetector {
+  detectDefault(): Promise<string | undefined>;
+}
+
 /** Narrow port onto upstream `doctor`, wrapped by `SuccessVerifier` (BR3.4, S2). */
 export interface DoctorRunner {
   run(): Promise<{ failures: string[] }>;
@@ -79,6 +91,7 @@ export interface CommandDeps {
   installedState: InstalledStateAccess;
   doctorRunner: DoctorRunner;
   configAccess: ConfigAccess;
+  harnessDetector: HarnessDetector;
   /** Where output is written — injected so tests capture it instead of writing to real stdout. */
   stdout: (line: string) => void;
   stderr: (line: string) => void;
