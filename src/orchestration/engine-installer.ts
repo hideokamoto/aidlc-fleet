@@ -28,7 +28,13 @@ export interface EngineInstallerPorts {
   placeEngine(bytes: Uint8Array, harness: string): Promise<void>;
   /** Re-run upstream compose. */
   runCompose(env: Record<string, string>): Promise<ComposeResult>;
-  doctorFailures(): Promise<string[]>;
+  /**
+   * `configured` (issue #14): whether a doctor command actually ran.
+   * Threaded through to `EngineInstallResult.doctorConfigured` so
+   * `init`/`update` can tell "doctor never ran" apart from "doctor ran,
+   * found nothing" instead of both looking like an identical clean pass.
+   */
+  doctorFailures(): Promise<{ failures: string[]; configured: boolean }>;
   /** Existing Lockfile, when this is an update (undefined on first init). */
   loadLockfile(): Promise<Lockfile | undefined>;
   saveLockfile(lockfile: Lockfile): Promise<void>;
@@ -48,6 +54,8 @@ export interface EngineInstallOptions {
 export interface EngineInstallResult {
   success: boolean;
   compose: ComposeResult;
+  /** issue #14: whether a doctor command actually ran as part of this install's verification. */
+  doctorConfigured: boolean;
 }
 
 const ADOPTED_MARKER = 'adopted';
@@ -78,16 +86,18 @@ export class EngineInstaller {
     });
 
     const previous = await this.ports.loadLockfile();
-    const doctorFailures = await this.ports.doctorFailures();
+    const { failures: doctorFailures, configured: doctorConfigured } =
+      await this.ports.doctorFailures();
     const verification = this.verifier.verify({
       composeExitCode: compose.exitCode,
       dropsFileContent: compose.dropsFileContent,
       doctorFailures,
+      doctorConfigured,
       knownFailures: previous?.known_failures ?? [],
     });
 
     if (!verification.success) {
-      return { success: false, compose };
+      return { success: false, compose, doctorConfigured };
     }
 
     const installedAt = new Date().toISOString();
@@ -117,6 +127,6 @@ export class EngineInstaller {
     };
     await this.ports.saveLockfile(nextLockfile);
 
-    return { success: true, compose };
+    return { success: true, compose, doctorConfigured };
   }
 }

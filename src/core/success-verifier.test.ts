@@ -8,6 +8,7 @@ describe('SuccessVerifier', () => {
       composeExitCode: 0,
       dropsFileContent: 'ok: all good\n',
       doctorFailures: [],
+      doctorConfigured: true,
       knownFailures: [],
     });
     expect(result.success).toBe(true);
@@ -19,6 +20,7 @@ describe('SuccessVerifier', () => {
       composeExitCode: 0,
       dropsFileContent: 'status: [degraded] plugin sync incomplete\n',
       doctorFailures: [],
+      doctorConfigured: true,
       knownFailures: [],
     });
     expect(result.success).toBe(false);
@@ -32,6 +34,7 @@ describe('SuccessVerifier', () => {
       composeExitCode: 1,
       dropsFileContent: 'ok\n',
       doctorFailures: [],
+      doctorConfigured: true,
       knownFailures: [],
     });
     expect(result.success).toBe(false);
@@ -44,6 +47,7 @@ describe('SuccessVerifier', () => {
       composeExitCode: 0,
       dropsFileContent: 'ok\n',
       doctorFailures: ['stale-cache-warning', 'missing-optional-tool'],
+      doctorConfigured: true,
       knownFailures: ['stale-cache-warning', 'missing-optional-tool'],
     });
     expect(result.effectiveFailedCount).toBe(0);
@@ -56,6 +60,7 @@ describe('SuccessVerifier', () => {
       composeExitCode: 0,
       dropsFileContent: 'ok\n',
       doctorFailures: ['stale-cache-warning', 'unexpected-real-failure'],
+      doctorConfigured: true,
       knownFailures: ['stale-cache-warning'],
     });
     expect(result.effectiveFailedCount).toBe(1);
@@ -84,5 +89,44 @@ describe('SuccessVerifier', () => {
     const filtered = verifier.wrapDoctor({ failures: ['a', 'b', 'c'] }, ['b']);
     expect(filtered.effectiveFailures).toEqual(['a', 'c']);
     expect(filtered.effectiveFailedCount).toBe(2);
+  });
+
+  /**
+   * issue #14 (CodeRabbit pre-merge finding on PR #23): the "not
+   * configured" distinction added to `runDoctorCommand`/`doctor` must
+   * also reach the four-part install success check `EngineInstaller`/
+   * `PluginManager` use, or `init`/`update` still cannot tell "doctor
+   * never ran" apart from "doctor ran and found nothing" — exactly the
+   * gap the issue's Impact section calls out. `doctorConfigured` is
+   * carried through to the result unchanged; it does NOT alter
+   * `success`/`doctorOk` — an unconfigured doctor command remains
+   * non-blocking by design (BR3.1's existing stance), only now that
+   * fact is visible to callers instead of silently indistinguishable.
+   */
+  test('issue #14: doctorConfigured is carried through to the result without affecting success', () => {
+    const verifier = new SuccessVerifier();
+    const result = verifier.verify({
+      composeExitCode: 0,
+      dropsFileContent: 'ok\n',
+      doctorFailures: [],
+      doctorConfigured: false,
+      knownFailures: [],
+    });
+    expect(result.doctorConfigured).toBe(false);
+    expect(result.success).toBe(true);
+    expect(result.doctorOk).toBe(true);
+  });
+
+  test('issue #14: a configured, clean doctor run reports doctorConfigured: true', () => {
+    const verifier = new SuccessVerifier();
+    const result = verifier.verify({
+      composeExitCode: 0,
+      dropsFileContent: 'ok\n',
+      doctorFailures: [],
+      doctorConfigured: true,
+      knownFailures: [],
+    });
+    expect(result.doctorConfigured).toBe(true);
+    expect(result.success).toBe(true);
   });
 });

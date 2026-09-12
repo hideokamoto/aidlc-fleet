@@ -169,15 +169,16 @@ export function parseDoctorOutput(stdout: string): string[] {
 export async function runDoctorCommand(
   doctorCommand: string[] | undefined,
   env: Record<string, string>,
-): Promise<{ failures: string[] }> {
+): Promise<{ failures: string[]; configured: boolean }> {
   const [cmd, ...args] = doctorCommand ?? [];
   if (!cmd) {
     // No upstream doctor command configured (AIDLC_FLEET_DOCTOR_CMD
-    // unset): safe default is "no unaddressed failures reported," same
-    // as an upstream doctor run that found nothing wrong — this never
-    // silently swallows a real failure, since there is no real
-    // invocation to swallow one from.
-    return { failures: [] };
+    // unset/empty): report zero failures (never silently invents one,
+    // since there is no real invocation to have found one) but flag
+    // `configured: false` so callers (issue #14) can tell "never
+    // checked" apart from "checked, found nothing" instead of both
+    // collapsing into the same `{ failures: [] }` shape.
+    return { failures: [], configured: false };
   }
   const { stdout, exitCode } = await new Promise<{ stdout: string; exitCode: number }>(
     (resolve, reject) => {
@@ -203,7 +204,7 @@ export async function runDoctorCommand(
   if (exitCode !== 0 && failures.length === 0) {
     failures.push(`doctor command "${doctorCommand!.join(' ')}" exited with code ${exitCode}`);
   }
-  return { failures };
+  return { failures, configured: true };
 }
 
 async function readDropsFile(projectRoot: string): Promise<string> {
@@ -290,12 +291,8 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);
       return { exitCode, dropsFileContent: await readDropsFile(config.projectRoot) };
     },
-    doctorFailures: async () => {
-      const { failures } = await runDoctorCommand(config.doctorCommand, {
-        AIDLC_PROJECT_DIR: config.projectRoot,
-      });
-      return failures;
-    },
+    doctorFailures: () =>
+      runDoctorCommand(config.doctorCommand, { AIDLC_PROJECT_DIR: config.projectRoot }),
     loadLockfile: async () => {
       try {
         return await lockfileStore.load();
@@ -406,12 +403,8 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const body = pluginNames.map((name) => `# BEGIN ${name}\n# END ${name}`).join('\n');
       await writeFile(hookPath, `#!/bin/sh\n${body}\n`, 'utf8');
     },
-    doctorFailures: async () => {
-      const { failures } = await runDoctorCommand(config.doctorCommand, {
-        AIDLC_PROJECT_DIR: config.projectRoot,
-      });
-      return failures;
-    },
+    doctorFailures: () =>
+      runDoctorCommand(config.doctorCommand, { AIDLC_PROJECT_DIR: config.projectRoot }),
   });
 
   return {

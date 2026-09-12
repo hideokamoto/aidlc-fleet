@@ -63,7 +63,7 @@ function makePorts(overrides: Partial<EngineInstallerPorts> = {}): {
       calls.runCompose.push(env);
       return { exitCode: 0, dropsFileContent: 'ok\n' };
     },
-    doctorFailures: async () => [],
+    doctorFailures: async () => ({ failures: [], configured: true }),
     loadLockfile: async () => lockfile,
     saveLockfile: async (next: Lockfile) => {
       calls.saveLockfile.push(next);
@@ -159,5 +159,39 @@ describe('EngineInstaller.install (init)', () => {
     });
     const saved = calls.saveLockfile[0]!;
     expect(saved.managed).toContain('adopted');
+  });
+
+  /**
+   * issue #14 (CodeRabbit pre-merge finding on PR #23): `doctorFailures()`
+   * now reports whether a doctor command actually ran, and that must
+   * reach `EngineInstallResult` so `init`/`update` can tell "doctor never
+   * ran" apart from "doctor ran, found nothing" — the four-part success
+   * check itself still passes either way (BR3.1's existing stance is
+   * unchanged), only the visibility is new.
+   */
+  test('issue #14: doctorConfigured: false is surfaced on a successful install', async () => {
+    const { ports } = makePorts({
+      doctorFailures: async () => ({ failures: [], configured: false }),
+    });
+    const installer = new EngineInstaller(ports);
+    const result = await installer.install(channelEngine, {
+      harness: 'claude-code',
+      force: false,
+      isFirstInit: true,
+    });
+    expect(result.success).toBe(true);
+    expect(result.doctorConfigured).toBe(false);
+  });
+
+  test('issue #14: doctorConfigured: true is surfaced on a successful, configured install', async () => {
+    const { ports } = makePorts();
+    const installer = new EngineInstaller(ports);
+    const result = await installer.install(channelEngine, {
+      harness: 'claude-code',
+      force: false,
+      isFirstInit: true,
+    });
+    expect(result.success).toBe(true);
+    expect(result.doctorConfigured).toBe(true);
   });
 });

@@ -37,6 +37,20 @@ describe('runUpdate (CommandLayer)', () => {
     expect(result.exitCode).toBe(0);
   });
 
+  test('issue #14: notes when doctorConfigured is false on an otherwise successful update', async () => {
+    const { deps, logs } = makeFakeDeps({
+      channel: makeChannel({ engine: { ref: 'new', version: '0.2.0', sha256: 'x' } }),
+    });
+    deps.engineInstaller.install = async () => ({
+      success: true,
+      compose: { exitCode: 0, dropsFileContent: 'ok\n' },
+      doctorConfigured: false,
+    });
+    const result = await runUpdate({ acknowledgeMigration: false }, deps);
+    expect(result.exitCode).toBe(0);
+    expect(logs.stdout.join('\n').toLowerCase()).toContain('not configured');
+  });
+
   test('exits 4 when the gate passes but SuccessVerifier fails', async () => {
     const { deps } = makeFakeDeps({
       channel: makeChannel({ engine: { ref: 'new', version: '0.2.0', sha256: 'x' } }),
@@ -44,6 +58,7 @@ describe('runUpdate (CommandLayer)', () => {
     deps.engineInstaller.install = async () => ({
       success: false,
       compose: { exitCode: 1, dropsFileContent: 'ok\n' },
+      doctorConfigured: true,
     });
     const result = await runUpdate({ acknowledgeMigration: false }, deps);
     expect(result.exitCode).toBe(4);
@@ -80,7 +95,7 @@ describe('runUpdate (CommandLayer)', () => {
         checkEngineDirectoryReplace: async () => {},
         placeEngine: async () => {},
         runCompose: async () => ({ exitCode: 0, dropsFileContent: 'ok\n' }),
-        doctorFailures: async () => [],
+        doctorFailures: async () => ({ failures: [], configured: true }),
         loadLockfile: async () => undefined,
         saveLockfile: async (next) => {
           savedLockfile = next;

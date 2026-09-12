@@ -70,7 +70,7 @@ function makePorts(overrides: Partial<PluginManagerPorts> = {}): {
     regenerateSessionStartHook: async (names: string[]) => {
       calls.regenerateHook.push(names);
     },
-    doctorFailures: async () => [],
+    doctorFailures: async () => ({ failures: [], configured: true }),
     projectRoot: '/tmp/fake-project',
     ...overrides,
   };
@@ -146,6 +146,24 @@ describe('PluginManager.add', () => {
     await manager.add(channelPlugin);
     expect(calls.regenerateHook[0]).toContain('sample-plugin');
   });
+
+  /**
+   * issue #14 (CodeRabbit pre-merge finding on PR #23): `doctorFailures()`
+   * now reports whether a doctor command actually ran, and that must
+   * reach `PluginOpResult` so callers can tell "doctor never ran" apart
+   * from "doctor ran, found nothing" — the four-part success check itself
+   * still passes either way (BR3.1's existing stance is unchanged), only
+   * the visibility is new.
+   */
+  test('issue #14: doctorConfigured: false is surfaced on a successful add', async () => {
+    const { ports } = makePorts({
+      doctorFailures: async () => ({ failures: [], configured: false }),
+    });
+    const manager = new PluginManager(ports);
+    const result = await manager.add(channelPlugin);
+    expect(result.success).toBe(true);
+    expect(result.doctorConfigured).toBe(false);
+  });
 });
 
 describe('PluginManager.remove', () => {
@@ -197,5 +215,28 @@ describe('PluginManager.remove', () => {
     const manager = new PluginManager(ports);
     await manager.remove('sample-plugin');
     expect(calls.regenerateHook[0]).toEqual(['other-plugin']);
+  });
+
+  test('issue #14: doctorConfigured: false is surfaced on a successful remove', async () => {
+    const existingLockfile = makeLockfile({
+      plugins: [
+        {
+          name: 'sample-plugin',
+          ref: 'r',
+          version: '1.0.0',
+          sha256: 's',
+          composed_at: 't',
+          engine_version_at_compose: '0.1.0',
+        },
+      ],
+    });
+    const { ports } = makePorts({
+      loadLockfile: async () => existingLockfile,
+      doctorFailures: async () => ({ failures: [], configured: false }),
+    });
+    const manager = new PluginManager(ports);
+    const result = await manager.remove('sample-plugin');
+    expect(result.success).toBe(true);
+    expect(result.doctorConfigured).toBe(false);
   });
 });

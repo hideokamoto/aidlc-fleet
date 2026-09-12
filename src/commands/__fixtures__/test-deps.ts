@@ -106,18 +106,24 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
     channelClient: { fetchChannel: async () => channel },
     versionGate: new VersionGate(),
     engineInstaller: {
-      install: async () => ({ success: true, compose: { exitCode: 0, dropsFileContent: 'ok\n' } }),
+      install: async () => ({
+        success: true,
+        compose: { exitCode: 0, dropsFileContent: 'ok\n' },
+        doctorConfigured: true,
+      }),
     },
     pluginManager: {
       add: async () => ({
         success: true,
         compose: { exitCode: 0, dropsFileContent: 'ok\n' },
         pluginSyncClassification: 'ok',
+        doctorConfigured: true,
       }),
       remove: async () => ({
         success: true,
         compose: { exitCode: 0, dropsFileContent: 'ok\n' },
         pluginSyncClassification: 'ok',
+        doctorConfigured: true,
       }),
     },
     driftDetector: new DriftDetector(),
@@ -125,7 +131,7 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
     installedState: {
       read: async () => ({ installedEngineRef: lockfile.engine.ref, installedPluginRefs: {} }),
     },
-    doctorRunner: { run: async () => ({ failures: [] }) },
+    doctorRunner: { run: async () => ({ failures: [], configured: true }) },
     configAccess,
     stdout: (line) => logs.stdout.push(line),
     stderr: (line) => logs.stderr.push(line),

@@ -163,6 +163,55 @@ describe('runDoctorCommand', () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  /**
+   * issue #14: "no failures because nothing was configured" and "no
+   * failures because a real run found nothing wrong" must be
+   * distinguishable by callers (`doctor`'s own message, and the
+   * four-part install success check). `configured` carries that
+   * distinction; `failures` alone cannot.
+   */
+  test('issue #14: signals "not configured" via `configured: false` when no doctor command is set', async () => {
+    const spawnMock = mock(() => {
+      throw new Error('spawn should not be called when doctorCommand is unset');
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const { runDoctorCommand } = await import('./real-deps');
+
+    const result = await runDoctorCommand(undefined, {});
+    expect(result.configured).toBe(false);
+  });
+
+  test('issue #14: an empty doctorCommand array is also reported as `configured: false`', async () => {
+    const spawnMock = mock(() => {
+      throw new Error('spawn should not be called when doctorCommand is empty');
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const { runDoctorCommand } = await import('./real-deps');
+
+    const result = await runDoctorCommand([], {});
+    expect(result.configured).toBe(false);
+    expect(result.failures).toEqual([]);
+  });
+
+  test('issue #14: a real, configured run reports `configured: true` even when it finds nothing', async () => {
+    class FakeChild extends EventEmitter {
+      stdout = new EventEmitter();
+    }
+    const child = new FakeChild();
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      queueMicrotask(() => {
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const { runDoctorCommand } = await import('./real-deps');
+
+    const result = await runDoctorCommand(['doctor-bin'], {});
+    expect(result.configured).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
   test('spawns the configured command, captures stdout, and parses failure lines', async () => {
     class FakeChild extends EventEmitter {
       stdout = new EventEmitter();

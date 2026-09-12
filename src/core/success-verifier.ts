@@ -20,6 +20,14 @@ export interface SuccessVerifierInput {
   dropsFileContent: string;
   /** Raw doctor failure identifiers, before known_failures filtering. */
   doctorFailures: string[];
+  /**
+   * Whether a doctor command actually ran (issue #14). Carried through to
+   * `SuccessVerifierResult` unchanged; it never alters `success`/`doctorOk`
+   * — an unconfigured doctor command stays non-blocking by design — it
+   * only makes that fact visible to `init`/`update` instead of collapsing
+   * into the same result as a configured, clean run.
+   */
+  doctorConfigured: boolean;
   /** `Lockfile.known_failures` — doctor findings accepted as known. */
   knownFailures: string[];
 }
@@ -29,6 +37,8 @@ export interface SuccessVerifierResult {
   composeOk: boolean;
   noDegraded: boolean;
   doctorOk: boolean;
+  /** issue #14: passthrough of `SuccessVerifierInput.doctorConfigured`. */
+  doctorConfigured: boolean;
   effectiveFailedCount: number;
   effectiveFailures: string[];
 }
@@ -56,6 +66,7 @@ export class SuccessVerifier {
       composeOk,
       noDegraded,
       doctorOk,
+      doctorConfigured: input.doctorConfigured,
       effectiveFailedCount,
       effectiveFailures,
     };

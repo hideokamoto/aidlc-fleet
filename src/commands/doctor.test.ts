@@ -11,14 +11,14 @@ describe('runDoctor (CommandLayer)', () => {
 
   test('BR3.4: known_failures are filtered out before the exit code is decided', async () => {
     const { deps } = makeFakeDeps({ lockfile: makeLockfile({ known_failures: ['flaky-check'] }) });
-    deps.doctorRunner.run = async () => ({ failures: ['flaky-check'] });
+    deps.doctorRunner.run = async () => ({ failures: ['flaky-check'], configured: true });
     const result = await runDoctor(deps);
     expect(result.exitCode).toBe(0);
   });
 
   test('a genuine (non-known) failure yields a non-zero exit', async () => {
     const { deps } = makeFakeDeps();
-    deps.doctorRunner.run = async () => ({ failures: ['real-problem'] });
+    deps.doctorRunner.run = async () => ({ failures: ['real-problem'], configured: true });
     const result = await runDoctor(deps);
     expect(result.exitCode).not.toBe(0);
   });
@@ -75,5 +75,30 @@ describe('runDoctor (CommandLayer)', () => {
     };
     const result = await runDoctor(deps);
     expect(result.exitCode).not.toBe(0);
+  });
+
+  /**
+   * issue #14: when no doctor command is configured at all, `doctor`
+   * used to print "no unaddressed failures" — indistinguishable from a
+   * real run that checked and found nothing. It must now say plainly
+   * that nothing was checked, while still exiting 0 (an unconfigured
+   * doctor command is not itself a failure).
+   */
+  test('issue #14: reports "not configured" distinctly from a genuinely clean run', async () => {
+    const { deps, logs } = makeFakeDeps();
+    deps.doctorRunner.run = async () => ({ failures: [], configured: false });
+    const result = await runDoctor(deps);
+    expect(result.exitCode).toBe(0);
+    const printed = [...logs.stdout, ...logs.stderr].join('\n');
+    expect(printed).not.toContain('doctor: no unaddressed failures.');
+    expect(printed.toLowerCase()).toContain('not configured');
+  });
+
+  test('issue #14: a genuinely clean, configured run still prints "no unaddressed failures"', async () => {
+    const { deps, logs } = makeFakeDeps();
+    deps.doctorRunner.run = async () => ({ failures: [], configured: true });
+    const result = await runDoctor(deps);
+    expect(result.exitCode).toBe(0);
+    expect(logs.stdout.join('\n')).toContain('doctor: no unaddressed failures.');
   });
 });
