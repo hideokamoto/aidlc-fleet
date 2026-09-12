@@ -54,6 +54,13 @@ export class FileOwnershipGuard {
     targetDir: string,
     options: { force: boolean },
   ): Promise<EngineDirectoryReplaceResult> {
+    // BR2.1 governs *replacing* an engine-owned directory. A brand-new
+    // project's first `init` has no such directory yet — there is nothing
+    // to replace and nothing to back up, so it proceeds regardless of
+    // --force. Only an existing directory triggers the force+backup gate.
+    if (!(await this.pathExists(targetDir))) {
+      return { backupPath: '' };
+    }
     if (!options.force) {
       throw new FileOwnershipViolation(
         `refusing to replace engine-owned directory ${targetDir} without --force`,
@@ -115,6 +122,15 @@ export class FileOwnershipGuard {
       }
     }
     return merged;
+  }
+
+  private async pathExists(targetPath: string): Promise<boolean> {
+    try {
+      await lstat(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private isUnderAidlcWorkspace(targetPath: string): boolean {

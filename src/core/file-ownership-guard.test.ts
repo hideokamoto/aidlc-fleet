@@ -47,6 +47,21 @@ describe('FileOwnershipGuard (real filesystem)', () => {
     expect(backupContent).toBe('original');
   });
 
+  test('BR2.1: a first-ever install, where the engine directory does not exist yet, proceeds without --force and without a backup (nothing to replace)', async () => {
+    const engineDir = join(root, '.claude');
+    // engineDir is deliberately never created — this is the real shape of
+    // a brand-new project's first `init`, before this fix confirmed
+    // against the actual CLI (checkEngineDirectoryReplace always demanded
+    // --force, then failed backing up a directory that never existed).
+
+    const guard = new FileOwnershipGuard({ projectRoot: root });
+    const result = await guard.checkEngineDirectoryReplace(engineDir, { force: false });
+
+    expect(result.backupPath).toBe('');
+    const entries = await readdir(root).catch(() => []);
+    expect(entries).toEqual([]);
+  });
+
   test('BR2.3: a write under aidlc/ (other than the seed copy) is refused', async () => {
     const aidlcPath = join(root, 'aidlc', 'spaces', 'default', 'intents.json');
     await mkdir(join(root, 'aidlc', 'spaces', 'default'), { recursive: true });

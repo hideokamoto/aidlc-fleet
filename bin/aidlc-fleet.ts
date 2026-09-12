@@ -12,7 +12,7 @@ import { runPluginAdd, runPluginRemove } from '../src/commands/plugin';
 import { runPin, runUnpin } from '../src/commands/pin';
 import { runStatus } from '../src/commands/status';
 import { runDoctor } from '../src/commands/doctor';
-import { hasFlag, positionals, readOption } from '../src/commands/argv';
+import { hasFlag, positionals, resolveHarness } from '../src/commands/argv';
 import { buildRealDeps } from '../src/commands/real-deps';
 
 const USAGE = `aidlc-fleet <command> [options]
@@ -65,7 +65,7 @@ async function main(): Promise<number> {
       const result = await runInit(
         {
           adopt: hasFlag(rest, 'adopt'),
-          harness: readOption(rest, 'harness') ?? 'claude-code',
+          harness: resolveHarness(rest),
           force: hasFlag(rest, 'force'),
         },
         deps,
