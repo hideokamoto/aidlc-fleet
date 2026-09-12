@@ -261,10 +261,11 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     expect(spawnCalls.some((c) => c.cmd === 'doctor-bin')).toBe(true);
   });
 
-  test('"config" runs even with AIDLC_FLEET_CHANNEL_URL unset, and reports every resolved value/source', async () => {
+  test('"config" reports every resolved value/source without prompting when all 4 vars already resolve', async () => {
     const { runCli } = await import('./cli');
     await setUp();
-    delete process.env.AIDLC_FLEET_CHANNEL_URL;
+    // Every var already resolves via env (setUp), so `config` has nothing
+    // left to prompt for and returns without reading stdin.
     expect(await runCli(['config'], projectRoot)).toBe(0);
   });
 
