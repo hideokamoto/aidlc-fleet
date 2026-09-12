@@ -3,6 +3,7 @@ import { PluginManager } from './plugin-manager';
 import type { PluginManagerPorts } from './plugin-manager';
 import type { ChannelPlugin } from '../types/channel';
 import type { Lockfile } from '../types/lockfile';
+import { assertDefined } from '../test-support/assert-defined';
 
 function makeLockfile(overrides: Partial<Lockfile> = {}): Lockfile {
   return {
@@ -86,7 +87,7 @@ describe('PluginManager.add', () => {
     expect(result.success).toBe(true);
     expect(calls.placeProjection).toHaveLength(1);
     expect(calls.saveLockfile).toHaveLength(1);
-    const saved = calls.saveLockfile[0]!;
+    const saved = assertDefined(calls.saveLockfile[0]);
     expect(saved.plugins.map((p) => p.name)).toContain('sample-plugin');
   });
 
@@ -126,7 +127,7 @@ describe('PluginManager.add', () => {
     const { ports, calls } = makePorts();
     const manager = new PluginManager(ports);
     await manager.add(channelPlugin);
-    const env = calls.runCompose[0]!;
+    const env = assertDefined(calls.runCompose[0]);
     expect(env.AIDLC_PROJECT_DIR).toBeTruthy();
   });
 
@@ -168,7 +169,7 @@ describe('PluginManager.remove', () => {
 
     expect(result.success).toBe(true);
     expect(calls.removeProjection).toEqual(['sample-plugin']);
-    const saved = calls.saveLockfile[0]!;
+    const saved = assertDefined(calls.saveLockfile[0]);
     expect(saved.plugins).toEqual([]);
   });
 

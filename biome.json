@@ -23,17 +23,6 @@
       "recommended": true,
       "correctness": {
         "noUnusedVariables": "warn"
-      },
-      "performance": {
-        "noDelete": "off"
-      },
-      "style": {
-        "noNonNullAssertion": "off",
-        "useNumberNamespace": "off",
-        "useTemplate": "off"
-      },
-      "suspicious": {
-        "noImplicitAnyLet": "off"
       }
     }
   },

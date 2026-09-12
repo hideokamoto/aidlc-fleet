@@ -98,7 +98,7 @@ describe('runUpdate (CommandLayer)', () => {
       expect(savedLockfile).toBeDefined();
       // Sanity-check the precondition this test is actually exercising:
       // a plain init already recorded a non-empty engine_origin.
-      expect(savedLockfile!.engine_origin).toBe('origin-ref');
+      expect(savedLockfile?.engine_origin).toBe('origin-ref');
 
       const { deps } = makeFakeDeps({
         lockfile: savedLockfile,

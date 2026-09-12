@@ -65,6 +65,7 @@
 - NEVER `aidlc/` ワークスペース状態を読み書きしない（初期メモリシード複製を (affirmed 2026-09-07)
 除く）。 (affirmed 2026-09-07)
 - NEVER upstream の plugin-compose ロジックを再実装しない。 (affirmed 2026-09-07)
+
 ## Mandated
 
 <!-- Populated by practices-discovery affirmation gate. -->
@@ -99,6 +100,15 @@ GitHub Secret Scanning, TruffleHog 等）を必須ステップとして組み込
 グリーンであることをマージの条件とする。 (affirmed 2026-09-07)
 - ALWAYS `main` へのマージ後、npm への公開の前に CircleCI ワークフロー上の (affirmed 2026-09-07)
 手動承認ステップを経る。 (affirmed 2026-09-07)
+- ALWAYS Biome（またはその後継のリンタ/フォーマッタ）の `recommended` ルー (affirmed 2026-09-12)
+ルセットからルール単位で緩和・無効化する場合は、その緩和を既定として受け (affirmed 2026-09-12)
+入れる前に、該当コードを修正してルールを満たす対応を優先的に検討する — (affirmed 2026-09-12)
+「ルールを緩めて既存コードに合わせる」のではなく「コードを直してルールを (affirmed 2026-09-12)
+厳格に保つ」を基本方針とする。（インタビュー Q2, Answer B で確定。すでに (affirmed 2026-09-12)
+`noNonNullAssertion` / `noImplicitAnyLet` / `noDelete` / `useNumberNamespace` (affirmed 2026-09-12)
+/ `useTemplate` の5ルールについて実行済み。`correctness.noUnusedVariables: (affirmed 2026-09-12)
+"warn"` は本方針の対象外として意図的に維持されている。） (affirmed 2026-09-12)
+
 ## Corrections
 
 <!-- Project-specific corrections from human feedback. -->

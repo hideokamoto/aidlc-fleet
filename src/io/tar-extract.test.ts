@@ -86,24 +86,24 @@ describe('parseTar', () => {
     const archive = buildTarArchive([{ name: 'hello.txt', typeflag: '0', content: 'hello world' }]);
     const entries = parseTar(archive);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.name).toBe('hello.txt');
-    expect(entries[0]!.type).toBe('file');
-    expect(new TextDecoder().decode(entries[0]!.data)).toBe('hello world');
+    expect(entries[0]?.name).toBe('hello.txt');
+    expect(entries[0]?.type).toBe('file');
+    expect(new TextDecoder().decode(entries[0]?.data)).toBe('hello world');
   });
 
   test('ディレクトリエントリを正しくパースする', () => {
     const archive = buildTarArchive([{ name: 'some-dir/', typeflag: '5' }]);
     const entries = parseTar(archive);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.name).toBe('some-dir/');
-    expect(entries[0]!.type).toBe('directory');
+    expect(entries[0]?.name).toBe('some-dir/');
+    expect(entries[0]?.type).toBe('directory');
   });
 
   test('シンボリックリンクエントリ（typeflag "2"）を type: "symlink" として検出する', () => {
     const archive = buildTarArchive([{ name: 'link.txt', typeflag: '2' }]);
     const entries = parseTar(archive);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.type).toBe('symlink');
+    expect(entries[0]?.type).toBe('symlink');
   });
 
   test('複数エントリを順序通りにパースする', () => {

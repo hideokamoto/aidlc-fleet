@@ -3,6 +3,7 @@ import { EngineInstaller } from './engine-installer';
 import type { EngineInstallerPorts } from './engine-installer';
 import type { ChannelEngine } from '../types/channel';
 import type { Lockfile } from '../types/lockfile';
+import { assertDefined } from '../test-support/assert-defined';
 
 function makeLockfile(overrides: Partial<Lockfile> = {}): Lockfile {
   return {
@@ -87,7 +88,7 @@ describe('EngineInstaller.install (init)', () => {
 
     expect(result.success).toBe(true);
     expect(calls.saveLockfile).toHaveLength(1);
-    const saved = calls.saveLockfile[0]!;
+    const saved = assertDefined(calls.saveLockfile[0]);
     expect(saved.engine_origin).toBe('new-ref');
     expect(saved.engine.ref).toBe('new-ref');
   });
@@ -132,7 +133,7 @@ describe('EngineInstaller.install (init)', () => {
       force: true,
       isFirstInit: false,
     });
-    const saved = calls.saveLockfile[0]!;
+    const saved = assertDefined(calls.saveLockfile[0]);
     expect(saved.engine_origin).toBe('old-ref');
     expect(saved.engine.ref).toBe('new-ref');
   });
@@ -157,7 +158,7 @@ describe('EngineInstaller.install (init)', () => {
       isFirstInit: true,
       adopt: true,
     });
-    const saved = calls.saveLockfile[0]!;
+    const saved = assertDefined(calls.saveLockfile[0]);
     expect(saved.managed).toContain('adopted');
   });
 });

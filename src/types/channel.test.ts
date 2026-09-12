@@ -34,7 +34,7 @@ test('parseChannel throws ChannelParseError on malformed JSON', () => {
 
 test('parseChannel throws ChannelParseError when a required field is missing', () => {
   const broken = { ...validFixture } as Record<string, unknown>;
-  delete broken.engine;
+  broken.engine = undefined;
   expect(() => parseChannel(JSON.stringify(broken))).toThrow(ChannelParseError);
 });
 
@@ -51,8 +51,8 @@ test('parseChannel accepts optional settings_overlay/mcp_overlay as opaque pass-
 
 test('parseChannel defaults missing migration_boundaries/plugins to empty arrays', () => {
   const minimal = { ...validFixture } as Record<string, unknown>;
-  delete minimal.migration_boundaries;
-  delete minimal.plugins;
+  minimal.migration_boundaries = undefined;
+  minimal.plugins = undefined;
   const channel = parseChannel(JSON.stringify(minimal));
   expect(channel.migration_boundaries).toEqual([]);
   expect(channel.plugins).toEqual([]);

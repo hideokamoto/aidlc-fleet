@@ -10,6 +10,7 @@ import {
   ENV_CONFIG_KEYS,
   type EnvConfigKey,
   type LocalConfigValues,
+  type ResolvedConfig,
 } from '../core/env-config-resolver';
 import type { CommandDeps, CommandResult } from './types';
 
@@ -21,7 +22,7 @@ const PROMPT_LABEL: Record<EnvConfigKey, string> = {
 };
 
 export async function runConfig(deps: CommandDeps): Promise<CommandResult> {
-  let resolved;
+  let resolved: ResolvedConfig;
   try {
     resolved = await deps.configAccess.resolveAll();
   } catch (err) {

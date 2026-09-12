@@ -1,6 +1,7 @@
 import { test, expect, describe } from 'bun:test';
 import { runConfig } from './config';
 import { makeFakeDeps } from './__fixtures__/test-deps';
+import { assertDefined } from '../test-support/assert-defined';
 
 const ALL_RESOLVED_ENV = {
   AIDLC_FLEET_CHANNEL_URL: 'http://env.example/channel.json',
@@ -39,7 +40,7 @@ describe('runConfig (CommandLayer)', () => {
     await runConfig(deps);
     expect(promptQuestions).toHaveLength(1);
     expect(configSaves).toHaveLength(1);
-    expect(Object.keys(configSaves[0]!)).toEqual(['AIDLC_FLEET_CHANNEL_URL']);
+    expect(Object.keys(assertDefined(configSaves[0]))).toEqual(['AIDLC_FLEET_CHANNEL_URL']);
   });
 
   test('preserves existing local-config entries for variables not being re-answered', async () => {

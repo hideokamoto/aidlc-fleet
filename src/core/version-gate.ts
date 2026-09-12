@@ -53,8 +53,8 @@ export class VersionGateRejection extends Error {
  * handling for this CLI's version strings.
  */
 function compareVersions(a: string, b: string): number {
-  const partsA = a.split('.').map((n) => parseInt(n, 10) || 0);
-  const partsB = b.split('.').map((n) => parseInt(n, 10) || 0);
+  const partsA = a.split('.').map((n) => Number.parseInt(n, 10) || 0);
+  const partsB = b.split('.').map((n) => Number.parseInt(n, 10) || 0);
   const len = Math.max(partsA.length, partsB.length);
   for (let i = 0; i < len; i += 1) {
     const diff = (partsA[i] ?? 0) - (partsB[i] ?? 0);
