@@ -96,13 +96,15 @@ export interface RealDepsConfig {
    */
   doctorCommand?: string[];
   /**
-   * `owner/name` GitHub repo the engine tarball is fetched from. Required
-   * whenever an engine install/update actually runs (`init`/`update`).
-   * Unlike `ChannelPlugin`, `ChannelEngine` carries no `repo` field
-   * (`contract-summary.md` Contract 1 — that schema is owned externally by
-   * the channel operator, so this CLI cannot add one unilaterally); this
-   * config value fills that gap without touching the contract. Configured
-   * via `AIDLC_FLEET_ENGINE_REPO`.
+   * `owner/name` GitHub repo override for the engine tarball fetch.
+   * Optional (issue #11): the Channel's own `engine.repo` field is the
+   * normal, central source of truth for where the engine comes from — a
+   * fleet operator moves the engine to a fork/mirror by updating that one
+   * Channel file, and every project tracking it follows automatically.
+   * This config value, set via `AIDLC_FLEET_ENGINE_REPO`, only exists for
+   * the exceptional per-project override case (e.g. testing a fork before
+   * it lands in the Channel) and takes precedence over `engine.repo` when
+   * present; see {@link buildRealDeps}'s `fetchEngineTarball`.
    */
   engineRepo?: string;
 }
@@ -288,9 +290,13 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
 
   const engineInstaller = new EngineInstaller({
     projectRoot: config.projectRoot,
+    // issue #11: `config.engineRepo` (AIDLC_FLEET_ENGINE_REPO) is an
+    // optional per-project override; the Channel's own `engine.repo` is
+    // the normal source of truth, so it wins whenever no override is
+    // configured.
     fetchEngineTarball: (engine) =>
       channelClient.fetchTarball(
-        buildTarballUrl(config.engineRepo ?? '', engine.ref),
+        buildTarballUrl(config.engineRepo ?? engine.repo, engine.ref),
         engine.sha256,
       ),
     checkEngineDirectoryReplace: async (opts) => {
