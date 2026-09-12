@@ -1279,7 +1279,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
     const originalChannelUrl = process.env.AIDLC_FLEET_CHANNEL_URL;
     const originalEngineRepo = process.env.AIDLC_FLEET_ENGINE_REPO;
     try {
-      process.env.AIDLC_FLEET_CHANNEL_URL = undefined;
+      delete process.env.AIDLC_FLEET_CHANNEL_URL;
       process.env.AIDLC_FLEET_ENGINE_REPO = 'env-owner/env-repo';
       await writeFile(
         join(projectRoot, '.aidlc-fleet.local.json'),
@@ -1299,9 +1299,9 @@ describe('buildRealDeps() — remaining port coverage', () => {
       expect(resolved.AIDLC_FLEET_COMPOSE_CMD.source).toBe('default');
       expect(resolved.AIDLC_FLEET_DOCTOR_CMD.source).toBe('default');
     } finally {
-      if (originalChannelUrl === undefined) process.env.AIDLC_FLEET_CHANNEL_URL = undefined;
+      if (originalChannelUrl === undefined) delete process.env.AIDLC_FLEET_CHANNEL_URL;
       else process.env.AIDLC_FLEET_CHANNEL_URL = originalChannelUrl;
-      if (originalEngineRepo === undefined) process.env.AIDLC_FLEET_ENGINE_REPO = undefined;
+      if (originalEngineRepo === undefined) delete process.env.AIDLC_FLEET_ENGINE_REPO;
       else process.env.AIDLC_FLEET_ENGINE_REPO = originalEngineRepo;
       await rm(projectRoot, { recursive: true, force: true });
     }

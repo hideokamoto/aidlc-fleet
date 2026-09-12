@@ -66,6 +66,15 @@
 除く）。 (affirmed 2026-09-07)
 - NEVER upstream の plugin-compose ロジックを再実装しない。 (affirmed 2026-09-07)
 
+（今回の再実行に関連する新規 Forbidden 項目なし。コードスタイル／ツーリング (affirmed 2026-09-12)
+に直接関連する既存 Forbidden 項目は `project.md` に現時点で存在しない。） (affirmed 2026-09-12)
+--- (affirmed 2026-09-12)
+**注記**: `project.md` にはこの3件以外にも多数の Mandated / Forbidden 項目 (affirmed 2026-09-12)
+（バージョンゲート、レシート管理、シークレット非ハードコード、upstream 不変 (affirmed 2026-09-12)
+更、CircleCI のシークレット/依存関係スキャン等）が存在するが、これらは今回の (affirmed 2026-09-12)
+再実行スコープ（`## Code Style` のリンタ／フォーマッタ選択とその厳格さ）とは (affirmed 2026-09-12)
+無関係のため、本ファイルには転記していない。転記対象は「コードスタイル／ (affirmed 2026-09-12)
+ツーリングに関連する」と明示された項目のみとした。 (affirmed 2026-09-12)
 ## Mandated
 
 <!-- Populated by practices-discovery affirmation gate. -->
@@ -109,6 +118,11 @@ GitHub Secret Scanning, TruffleHog 等）を必須ステップとして組み込
 / `useTemplate` の5ルールについて実行済み。`correctness.noUnusedVariables: (affirmed 2026-09-12)
 "warn"` は本方針の対象外として意図的に維持されている。） (affirmed 2026-09-12)
 
+- ALWAYS コマンド層 / コアロジック層（バージョンゲート・成功判定ロジック）/ (affirmed 2026-09-12)
+ファイルシステム I/O 層を分離した実装構成にする。（`project.md` より継続、 (affirmed 2026-09-12)
+変更なし） (affirmed 2026-09-12)
+- ALWAYS ファイル所有権 invariant（v0.1 §7）違反を検知した場合、警告に留めず (affirmed 2026-09-12)
+即座に失敗させる（fail fast）。（`project.md` より継続、変更なし） (affirmed 2026-09-12)
 ## Corrections
 
 <!-- Project-specific corrections from human feedback. -->

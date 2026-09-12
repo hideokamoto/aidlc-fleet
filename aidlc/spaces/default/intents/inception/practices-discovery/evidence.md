@@ -129,7 +129,10 @@ reverse-engineering / codekb 更新時に解消するタスクとして記録し
   人間インタビュー Q2 で解消され、緩和を維持せずコード側を修正する決定が実
   行された結果、フォーマッタ・リンタの双方について「ツール選択のみが変更
   され、実質ポリシー（フォーマット規約・リンタ厳格さ）に後退はない」という
-  結論が成立する状態になった。
+  結論が成立する状態になった。`noUnusedVariables` についても、現行
+  `biome.json` の `correctness.noUnusedVariables` と旧 `eslint.config.js` の
+  `@typescript-eslint/no-unused-vars` はいずれも `warn` であり、この点に厳格さ
+  の後退はない。
 - この評価は brownfield（既存コード）の直接調査と、統合ステップでの再検証
   （`biome.json` の現物確認、`git diff --stat`）に基づく事実であり、
   [hypothesis] や [assumption] ではない。

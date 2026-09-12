@@ -9,9 +9,10 @@
 ### 1. `bunx biome ci .` は lint と format 両方をチェックする — 検証結果: 問題なし
 
 `.circleci/config.yml` の `lint` ジョブ（`Lint (biome ci .)` ステップ）を確認し
-た。`biome ci` は非対話・非書き込みモードで linter・formatter・
-`organizeImports` の診断をすべて実行し、いずれかに差分/違反があれば非ゼロ終了
-する（`biome check --write` の CI 専用版に相当）。ドラフトの「CI（CircleCI）の
+た。`biome ci` は非対話・非書き込みモードで formatter と有効な linter ルールの
+診断を実行し、差分/違反があれば非ゼロ終了する（`biome check --write` の CI 専用
+版に相当）。`biome.json` では `organizeImports.enabled` が `false` のため、import
+整理の診断は対象外である。ドラフトの「CI（CircleCI）の
 lint ジョブは `bunx biome ci .` を実行し、マージ前のゲートとする」という記述は
 正確であり、旧 ESLint 単体実行（lint のみ、format は別途 Prettier 実行が必要
 だった構成）よりもむしろ **カバレッジが広がっている**（format-check も同一ジ
