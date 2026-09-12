@@ -84,4 +84,21 @@ describe('runConfig (CommandLayer)', () => {
       { AIDLC_FLEET_CHANNEL_URL: 'http://answered.example/channel.json' },
     ]);
   });
+
+  /**
+   * code-review finding: a malformed `.aidlc-fleet.local.json` used to
+   * make `resolveAll()` throw uncaught, so the one command meant to let a
+   * user fix their config could not itself run. `config` must instead
+   * report the problem and exit non-zero without crashing the process.
+   */
+  test('a malformed local-config file is reported clearly instead of crashing the process', async () => {
+    const { deps } = makeFakeDeps();
+    deps.configAccess.resolveAll = async () => {
+      throw new Error(
+        'LocalConfigStore: .aidlc-fleet.local.json in /p is malformed: Unexpected token',
+      );
+    };
+    const result = await runConfig(deps);
+    expect(result.exitCode).not.toBe(0);
+  });
 });

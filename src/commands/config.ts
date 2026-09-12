@@ -21,7 +21,18 @@ const PROMPT_LABEL: Record<EnvConfigKey, string> = {
 };
 
 export async function runConfig(deps: CommandDeps): Promise<CommandResult> {
-  const resolved = await deps.configAccess.resolveAll();
+  let resolved;
+  try {
+    resolved = await deps.configAccess.resolveAll();
+  } catch (err) {
+    // code-review finding: `config` is the one command meant to let a
+    // user fix their configuration, so a malformed local file must not
+    // crash it uncaught — report the problem and let the user act on it.
+    deps.stderr(
+      `config: could not read the local config file (${err instanceof Error ? err.message : String(err)}). Fix or delete .aidlc-fleet.local.json, then re-run "aidlc-fleet config".`,
+    );
+    return { exitCode: 1 };
+  }
   const toPrompt = ENV_CONFIG_KEYS.filter((key) => resolved[key].source === 'unset');
 
   const answers: LocalConfigValues = {};

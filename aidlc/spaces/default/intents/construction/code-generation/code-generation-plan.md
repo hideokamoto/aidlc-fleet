@@ -42,7 +42,7 @@ the issue body for traceability purposes.
 - `ISS18-3`: Provide a `config` subcommand that interactively prompts for any
   currently-unset variable and saves answers to the local file.
 - `ISS18-4`: `doctor` and `status` report each variable's source (`env`,
-  `local-config`, or `unset`).
+  `local-config`, `default`, or `unset`).
 - `ISS18-5`: The local config file is excluded from version control
   (`.gitignore`) since it may carry values a team does not want committed.
 
@@ -56,7 +56,7 @@ the issue body for traceability purposes.
   "ordering": "各テスト対象レイヤーについて、まず失敗するテストを書き、それ",
   "scope": "feature",
   "test_strategy": "standard",
-  "project_type": "greenfield",
+  "project_type": "brownfield",
   "applicable_notes": [
     {
       "layer": "org",

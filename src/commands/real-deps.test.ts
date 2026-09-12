@@ -187,6 +187,53 @@ describe('runDoctorCommand', () => {
     expect(args).toEqual(['--json']);
   });
 
+  /**
+   * code-review finding: `runDoctorCommand` only ever parsed stdout and
+   * never inspected the child's exit code, so a doctor command that
+   * exits non-zero with nothing on stdout (crash, bad path, permission
+   * error) was reported as `{ failures: [] }` — "no unaddressed
+   * failures" — indistinguishable from a genuinely clean run. This
+   * exposure grew with issue #18's built-in `AIDLC_FLEET_DOCTOR_CMD`
+   * default, which makes doctor actually invoke a real command by
+   * default rather than only on explicit opt-in.
+   */
+  test('a non-zero exit with no stdout output is reported as a failure, not silently swallowed', async () => {
+    class FakeChild extends EventEmitter {
+      stdout = new EventEmitter();
+    }
+    const child = new FakeChild();
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      queueMicrotask(() => {
+        child.emit('close', 1);
+      });
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const { runDoctorCommand } = await import('./real-deps');
+
+    const result = await runDoctorCommand(['doctor-bin'], {});
+    expect(result.failures.length).toBeGreaterThan(0);
+  });
+
+  test('a zero exit with reported stdout failures is unaffected by the exit-code check', async () => {
+    class FakeChild extends EventEmitter {
+      stdout = new EventEmitter();
+    }
+    const child = new FakeChild();
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', Buffer.from('missing plugin foo\n'));
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const { runDoctorCommand } = await import('./real-deps');
+
+    const result = await runDoctorCommand(['doctor-bin'], {});
+    expect(result.failures).toEqual(['missing plugin foo']);
+  });
+
   test('rejects when the spawned process errors', async () => {
     class FakeChild extends EventEmitter {
       stdout = new EventEmitter();

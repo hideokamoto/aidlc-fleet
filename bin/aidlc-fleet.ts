@@ -63,8 +63,12 @@ async function main(): Promise<number> {
   const pos = positionals(rest);
 
   // `config` is the one command that must run even when AIDLC_FLEET_CHANNEL_URL
-  // is unset — it is how a user answers it in the first place.
-  if (command === 'config') {
+  // is unset — it is how a user answers it in the first place. `doctor`
+  // must run too: it never calls `channelClient.fetchChannel()`, and its
+  // whole point (issue #18) is to report an unset variable as a
+  // diagnosable failure instead of the CLI bailing out before doctor ever
+  // gets a chance to say so (code-review finding).
+  if (command === 'config' || command === 'doctor') {
     const deps = buildRealDeps({
       projectRoot,
       channelUrl,
@@ -72,7 +76,7 @@ async function main(): Promise<number> {
       doctorCommand,
       engineRepo,
     });
-    const result = await runConfig(deps);
+    const result = command === 'config' ? await runConfig(deps) : await runDoctor(deps);
     return result.exitCode;
   }
 
@@ -149,10 +153,7 @@ async function main(): Promise<number> {
       const result = await runStatus(deps);
       return result.exitCode;
     }
-    case 'doctor': {
-      const result = await runDoctor(deps);
-      return result.exitCode;
-    }
+    // 'doctor' is handled earlier (before the channelUrl gate) — see above.
     default:
       process.stdout.write(USAGE);
       return 1;

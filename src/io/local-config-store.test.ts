@@ -1,5 +1,5 @@
 import { test, expect, describe, afterEach } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalConfigStore, LocalConfigMalformedError } from './local-config-store';
@@ -72,5 +72,52 @@ describe('LocalConfigStore (I/O layer)', () => {
       AIDLC_FLEET_ENGINE_REPO: 'someone/fork',
     });
     expect(await store.load()).toEqual(merged);
+  });
+
+  /**
+   * code-review finding: save() used a plain `writeFile(this.path, ...)`,
+   * which FOLLOWS an existing symlink at that path and writes through it
+   * instead of replacing it — the same class of issue
+   * `FileOwnershipGuard`/`extractTarGz` exist to prevent for engine-owned
+   * paths. `.aidlc-fleet.local.json` is CLI-owned, not guarded by
+   * `FileOwnershipGuard`, so this store must not follow a symlink there
+   * itself. Fix: write to a fresh, exclusively-created temp file, then
+   * `rename()` over the destination — rename replaces the directory entry
+   * without following a symlink there (the same pattern `LockfileStore`
+   * and `PluginManager.placeProjection` already use).
+   */
+  test('save() replaces an existing symlink at the destination instead of writing through it', async () => {
+    const dir = await makeTempDir();
+    const outsideTarget = await mkdtemp(join(tmpdir(), 'aidlc-fleet-local-config-symlink-target-'));
+    try {
+      await writeFile(join(outsideTarget, 'sentinel.json'), '{}', 'utf8');
+      await symlink(
+        join(outsideTarget, 'sentinel.json'),
+        join(dir, '.aidlc-fleet.local.json'),
+        'file',
+      );
+      const store = new LocalConfigStore(dir);
+      await store.save({ AIDLC_FLEET_CHANNEL_URL: 'http://local.example/channel.json' });
+
+      // The symlink target itself was never written to.
+      const targetContent = await readFile(join(outsideTarget, 'sentinel.json'), 'utf8');
+      expect(targetContent).toBe('{}');
+      // The destination is now a plain file (the symlink was replaced, not followed).
+      const written = await readFile(join(dir, '.aidlc-fleet.local.json'), 'utf8');
+      expect(JSON.parse(written)).toEqual({
+        AIDLC_FLEET_CHANNEL_URL: 'http://local.example/channel.json',
+      });
+      await expect(readlink(join(dir, '.aidlc-fleet.local.json'))).rejects.toThrow();
+    } finally {
+      await rm(outsideTarget, { recursive: true, force: true });
+    }
+  });
+
+  test('save() leaves no leftover temp file behind on success', async () => {
+    const dir = await makeTempDir();
+    const store = new LocalConfigStore(dir);
+    await store.save({ AIDLC_FLEET_CHANNEL_URL: 'http://local.example/channel.json' });
+    const entries = await readdir(dir);
+    expect(entries).toEqual(['.aidlc-fleet.local.json']);
   });
 });

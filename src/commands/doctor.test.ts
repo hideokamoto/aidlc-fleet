@@ -59,4 +59,21 @@ describe('runDoctor (CommandLayer)', () => {
     // that should fail doctor on its own.
     expect(result.exitCode).toBe(0);
   });
+
+  /**
+   * code-review finding: a malformed `.aidlc-fleet.local.json` used to make
+   * `configAccess.resolveAll()` throw uncaught, crashing doctor entirely
+   * instead of reporting it as exactly the kind of problem doctor exists
+   * to surface.
+   */
+  test('issue #18: a malformed local-config file is reported as a doctor failure, not a crash', async () => {
+    const { deps } = makeFakeDeps();
+    deps.configAccess.resolveAll = async () => {
+      throw new Error(
+        'LocalConfigStore: .aidlc-fleet.local.json in /p is malformed: Unexpected token',
+      );
+    };
+    const result = await runDoctor(deps);
+    expect(result.exitCode).not.toBe(0);
+  });
 });

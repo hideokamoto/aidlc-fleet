@@ -19,7 +19,6 @@ export async function runStatus(deps: CommandDeps): Promise<CommandResult> {
   const channel = await deps.channelClient.fetchChannel();
   const installed = await deps.installedState.read();
   const drift = deps.driftDetector.summarize(lockfile, channel, installed);
-  const resolvedConfig = await deps.configAccess.resolveAll();
 
   const lines = [
     `channel: ${lockfile.channel}`,
@@ -27,14 +26,26 @@ export async function runStatus(deps: CommandDeps): Promise<CommandResult> {
     `plugins: ${lockfile.plugins.map((p) => `${p.name}@${p.version}`).join(', ') || '(none)'}`,
     `pin: ${lockfile.pin ?? '(none)'}`,
     `drift: ${drift.status}`,
-    // issue #18: surface where each of the 4 AIDLC_FLEET_* values came
-    // from, so a stale local-config entry or a missing var is visible
-    // without a separate `env | grep` step.
-    ...ENV_CONFIG_KEYS.map((key) => {
-      const entry = resolvedConfig[key];
-      return `${key}: ${entry.value ?? '(unset)'} (${entry.source})`;
-    }),
   ];
+
+  // issue #18: surface where each of the 4 AIDLC_FLEET_* values came
+  // from, so a stale local-config entry or a missing var is visible
+  // without a separate `env | grep` step. A malformed local-config file
+  // is content to report, not a status-command failure — status's own
+  // contract keeps BR8.1 (Lockfile absent/malformed) as its only failure
+  // mode (code-review finding).
+  try {
+    const resolvedConfig = await deps.configAccess.resolveAll();
+    for (const key of ENV_CONFIG_KEYS) {
+      const entry = resolvedConfig[key];
+      lines.push(`${key}: ${entry.value ?? '(unset)'} (${entry.source})`);
+    }
+  } catch (err) {
+    lines.push(
+      `config: local config file is malformed (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+
   deps.stdout(lines.join('\n'));
 
   return { exitCode: 0 };

@@ -36,15 +36,24 @@ bun test src/io/lockfile-store.test.ts
 
 ## Per-component test list
 
-### `src/io/local-config-store.test.ts` (I/O layer) — 4 tests
+### `src/io/local-config-store.test.ts` (I/O layer) — 7 tests
 1. `load()` returns an empty object when `.aidlc-fleet.local.json` is absent.
 2. `load()` parses a valid file and returns its 4 recognised keys.
-3. `load()` throws (or returns a typed error result — match `LockfileStore`'s
-   own absent/malformed split) on malformed JSON, mirroring
-   `LockfileMalformedError` handling.
+3. `load()` throws `LocalConfigMalformedError` on malformed JSON and on
+   valid-JSON-but-non-object input, mirroring `LockfileStore`'s
+   `LockfileMalformedError` handling (absent -> `{}`, malformed -> throw;
+   no alternative typed-error-result path — callers catch the thrown
+   error, same as `LockfileStore`'s absent/malformed split is consumed
+   via `try`/`catch` rather than a result type).
 4. `save()` then `load()` round-trips the 4 keys (real filesystem, temp dir —
    per `team.md`'s mandate that file-ownership-adjacent I/O gets a real-FS
    integration test, not a mock-only test).
+5. `merge()` preserves existing keys not present in a partial update.
+6. `save()` replaces an existing symlink at the destination file instead of
+   writing through it (write-to-temp + `rename()`, added after a
+   code-review finding — the original plain `writeFile()` would have
+   followed a pre-existing symlink at `.aidlc-fleet.local.json`).
+7. `save()` leaves no leftover temp file behind on success.
 
 ### `src/core/env-config-resolver.test.ts` (core logic layer) — 10 tests
 Priority order is env > local-config > built-in default > unset. Boundary
@@ -78,7 +87,7 @@ diverge):
 10. Resolving with a local-config object that has extra/unknown keys
     ignores them (forward-compatible with a hand-edited file).
 
-### `src/commands/config.test.ts` (command layer) — 7 tests
+### `src/commands/config.test.ts` (command layer) — 8 tests
 1. All 4 variables already resolved from env → no prompts shown, local
    config file untouched.
 2. `AIDLC_FLEET_CHANNEL_URL` unset, the other 3 fall back to their built-in
@@ -99,8 +108,12 @@ diverge):
 7. The saved file is written under `projectRoot`, never under `aidlc/`
    (`ISS18-2`; project.md Forbidden — "NEVER `aidlc/` ワークスペース状態を
    読み書きしない").
+8. A malformed local-config file is reported clearly and exits non-zero
+   instead of crashing the process uncaught (added after a code-review
+   finding — `config` is the one command meant to let a user fix this
+   exact problem).
 
-### `src/commands/doctor.test.ts` (extended) — 3 new tests
+### `src/commands/doctor.test.ts` (extended) — 4 new tests
 1. `doctor` output includes one line per required variable naming its
    source (`env` / `local-config` / `default` / `unset`).
 2. An `unset` required variable is surfaced as a doctor failure (consistent
@@ -108,13 +121,30 @@ diverge):
    `AIDLC_FLEET_CHANNEL_URL`), not silently ignored.
 3. A variable resolved from its built-in `default` is NOT surfaced as a
    doctor failure (a default is a valid, working value, not a gap).
+4. A malformed local-config file is surfaced as a doctor failure instead of
+   crashing the command (added after a code-review finding — doctor exists
+   to report exactly this kind of problem).
 
-### `src/commands/status.test.ts` (extended) — 1 new test
+### `src/commands/status.test.ts` (extended) — 2 new tests
 1. `status` output includes the per-variable source summary alongside the
    existing channel/engine/plugins/pin/drift lines.
+2. A malformed local-config file is reported as a line in `status`'s
+   output, not a crash — status's only failure mode stays BR8.1
+   (Lockfile absent/malformed), unchanged by issue #18 (added after a
+   code-review finding).
 
-Total: 25 tests across 5 files — inside the Standard strategy's 5-8-per-component
-band (4 components × ~6 average, plus the two thin extensions).
+Also extended (integration-glue layer, not itemized above since it has no
+dedicated Red/Green cycle of its own per `real-deps.ts`'s own doc comment):
+`src/commands/real-deps.test.ts` gained 2 tests for `runDoctorCommand`'s
+exit-code handling (a non-zero exit with no parseable stdout is now a
+reported failure) plus 3 tests for `buildConfigAccess` (`resolveAll`
+against a real temp dir + real env, `saveLocal` round trip, `prompt` via a
+mocked `readline`).
+
+Total across the 5 itemized files: 7 + 10 + 8 + 9 + 7 = 41 tests (I/O 7,
+core logic 10, command layer 8+9+7=24), all within or above the Standard
+strategy's 5-8-per-component band once counted per actual component rather
+than averaged.
 
 ## Mocking / stubbing guidance
 

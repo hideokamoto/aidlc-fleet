@@ -179,17 +179,31 @@ export async function runDoctorCommand(
     // invocation to swallow one from.
     return { failures: [] };
   }
-  const stdout = await new Promise<string>((resolve, reject) => {
-    const child = spawn(cmd, args, {
-      env: { ...process.env, ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const chunks: Buffer[] = [];
-    child.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
-    child.on('error', reject);
-    child.on('close', () => resolve(Buffer.concat(chunks).toString('utf8')));
-  });
-  return { failures: parseDoctorOutput(stdout) };
+  const { stdout, exitCode } = await new Promise<{ stdout: string; exitCode: number }>(
+    (resolve, reject) => {
+      const child = spawn(cmd, args, {
+        env: { ...process.env, ...env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const chunks: Buffer[] = [];
+      child.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
+      child.on('error', reject);
+      child.on('close', (code) =>
+        resolve({ stdout: Buffer.concat(chunks).toString('utf8'), exitCode: code ?? 1 }),
+      );
+    },
+  );
+  const failures = parseDoctorOutput(stdout);
+  // code-review finding: a doctor command that exits non-zero but prints
+  // no parseable failure line (crash, bad path, permission error) used to
+  // come back as `{ failures: [] }` — indistinguishable from a genuinely
+  // clean run. issue #18's built-in AIDLC_FLEET_DOCTOR_CMD default makes
+  // this command actually run by default now, so a broken default (or a
+  // broken override) must be surfaced rather than silently swallowed.
+  if (exitCode !== 0 && failures.length === 0) {
+    failures.push(`doctor command "${doctorCommand!.join(' ')}" exited with code ${exitCode}`);
+  }
+  return { failures };
 }
 
 async function readDropsFile(projectRoot: string): Promise<string> {

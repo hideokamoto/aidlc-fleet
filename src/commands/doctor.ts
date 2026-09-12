@@ -19,15 +19,24 @@ export async function runDoctor(deps: CommandDeps): Promise<CommandResult> {
   // resolved source (env/local-config/default/unset). Only `unset` (no
   // env, no local-config, no built-in default) is a doctor failure — a
   // value resolved from a built-in default is a working configuration,
-  // not a gap to fix.
-  const resolvedConfig = await deps.configAccess.resolveAll();
-  for (const key of ENV_CONFIG_KEYS) {
-    const entry = resolvedConfig[key];
-    deps.stdout(`${key}: ${entry.value ?? '(unset)'} (${entry.source})`);
+  // not a gap to fix. A malformed local-config file is exactly the kind
+  // of problem doctor exists to surface, so it becomes a reported
+  // failure here rather than crashing the command (code-review finding).
+  let configFailures: string[];
+  try {
+    const resolvedConfig = await deps.configAccess.resolveAll();
+    for (const key of ENV_CONFIG_KEYS) {
+      const entry = resolvedConfig[key];
+      deps.stdout(`${key}: ${entry.value ?? '(unset)'} (${entry.source})`);
+    }
+    configFailures = ENV_CONFIG_KEYS.filter((key) => resolvedConfig[key].source === 'unset').map(
+      (key) => `${key} is not set (no environment variable, local config, or default)`,
+    );
+  } catch (err) {
+    configFailures = [
+      `local config file is malformed (${err instanceof Error ? err.message : String(err)}) — fix or delete .aidlc-fleet.local.json`,
+    ];
   }
-  const configFailures = ENV_CONFIG_KEYS.filter(
-    (key) => resolvedConfig[key].source === 'unset',
-  ).map((key) => `${key} is not set (no environment variable, local config, or default)`);
 
   const raw = await deps.doctorRunner.run();
   const wrapped = deps.successVerifier.wrapDoctor(raw, loaded.lockfile.known_failures);

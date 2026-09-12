@@ -10,7 +10,8 @@
  * Scope boundary (project.md Forbidden): this file lives under
  * `projectRoot` only — never under `aidlc/`, never an upstream file.
  */
-import { readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ENV_CONFIG_KEYS, type LocalConfigValues } from '../core/env-config-resolver';
 
@@ -66,7 +67,14 @@ export class LocalConfigStore {
     return result;
   }
 
-  /** Overwrites the file with exactly `values` (only the 4 recognised keys are ever written). */
+  /**
+   * Overwrites the file with exactly `values` (only the 4 recognised keys
+   * are ever written). Writes to a freshly, exclusively created temp file
+   * first, then `rename()`s it over the destination — `rename()` replaces
+   * the directory entry without following a symlink that may already sit
+   * at `this.path`, and a crash between the write and the rename leaves
+   * the original file untouched (same pattern as `LockfileStore.save`).
+   */
   async save(values: LocalConfigValues): Promise<void> {
     const toWrite: LocalConfigValues = {};
     for (const key of ENV_CONFIG_KEYS) {
@@ -75,7 +83,20 @@ export class LocalConfigStore {
         toWrite[key] = value;
       }
     }
-    await writeFile(this.path, `${JSON.stringify(toWrite, null, 2)}\n`, 'utf8');
+    const tmpPath = `${this.path}.tmp-${randomUUID()}`;
+    const handle = await open(tmpPath, 'wx');
+    try {
+      await handle.writeFile(`${JSON.stringify(toWrite, null, 2)}\n`, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      await rename(tmpPath, this.path);
+    } catch (cause) {
+      await unlink(tmpPath).catch(() => {});
+      throw cause;
+    }
   }
 
   /**
