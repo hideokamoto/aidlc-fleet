@@ -1,0 +1,23 @@
+{
+  "stage": "code-generation",
+  "version": 1,
+  "writes": [
+    { "path": "src/core/env-config-resolver.ts" },
+    { "path": "src/core/env-config-resolver.test.ts" },
+    { "path": "src/io/local-config-store.ts" },
+    { "path": "src/io/local-config-store.test.ts" },
+    { "path": "src/commands/config.ts" },
+    { "path": "src/commands/config.test.ts" },
+    { "path": "src/commands/types.ts" },
+    { "path": "src/commands/__fixtures__/test-deps.ts" },
+    { "path": "src/commands/doctor.ts" },
+    { "path": "src/commands/doctor.test.ts" },
+    { "path": "src/commands/status.ts" },
+    { "path": "src/commands/status.test.ts" },
+    { "path": "src/commands/real-deps.ts" },
+    { "path": "src/commands/real-deps.test.ts" },
+    { "path": "bin/aidlc-fleet.ts" },
+    { "path": ".gitignore" },
+    { "path": "README.md" }
+  ]
+}
