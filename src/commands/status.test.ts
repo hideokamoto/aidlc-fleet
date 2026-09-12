@@ -5,7 +5,9 @@ import { makeFakeDeps, makeChannel } from './__fixtures__/test-deps';
 describe('runStatus (CommandLayer)', () => {
   test('exits 0 even when drift is detected — drift is reported content, not a failure (S3)', async () => {
     const { deps } = makeFakeDeps({
-      channel: makeChannel({ engine: { ref: 'newer', version: '0.9.0', sha256: 'x' } }),
+      channel: makeChannel({
+        engine: { repo: 'org/engine', ref: 'newer', version: '0.9.0', sha256: 'x' },
+      }),
     });
     const result = await runStatus(deps);
     expect(result.exitCode).toBe(0);

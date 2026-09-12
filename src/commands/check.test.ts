@@ -11,7 +11,9 @@ describe('runCheck (CommandLayer)', () => {
 
   test('exits 1 when behind channel', async () => {
     const { deps } = makeFakeDeps({
-      channel: makeChannel({ engine: { ref: 'newer', version: '0.9.0', sha256: 'x' } }),
+      channel: makeChannel({
+        engine: { repo: 'org/engine', ref: 'newer', version: '0.9.0', sha256: 'x' },
+      }),
     });
     const result = await runCheck(deps);
     expect(result.exitCode).toBe(1);
@@ -42,7 +44,9 @@ describe('runCheck (CommandLayer)', () => {
   test('respects a pin override (BR5.3)', async () => {
     const { deps } = makeFakeDeps({
       lockfile: makeLockfile({ pin: 'e1' }),
-      channel: makeChannel({ engine: { ref: 'much-newer', version: '9.0.0', sha256: 'x' } }),
+      channel: makeChannel({
+        engine: { repo: 'org/engine', ref: 'much-newer', version: '9.0.0', sha256: 'x' },
+      }),
     });
     const result = await runCheck(deps);
     expect(result.exitCode).toBe(0);

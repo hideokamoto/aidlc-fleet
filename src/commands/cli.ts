@@ -39,7 +39,7 @@ Environment (issue #18: env > project-local .aidlc-fleet.local.json > built-in d
   AIDLC_FLEET_CHANNEL_URL   Channel declaration URL (required; no built-in default)
   AIDLC_FLEET_COMPOSE_CMD   Upstream compose command, space-separated (default: "bun .claude/tools/aidlc-orchestrate.ts next compose")
   AIDLC_FLEET_DOCTOR_CMD    Upstream doctor command, space-separated (default: "bun .claude/tools/aidlc-utility.ts doctor")
-  AIDLC_FLEET_ENGINE_REPO   "owner/name" GitHub repo the engine tarball is fetched from (default: "awslabs/aidlc-workflows")
+  AIDLC_FLEET_ENGINE_REPO   Optional "owner/name" override for the engine tarball repo (default: the Channel's own declared engine.repo)
 
 Run "aidlc-fleet config" to answer AIDLC_FLEET_CHANNEL_URL once and save it to
 .aidlc-fleet.local.json (gitignored) instead of re-exporting it every session.
@@ -61,7 +61,15 @@ export async function runCli(argv: string[], projectRoot: string): Promise<numbe
   const doctorCommand = (resolvedConfig.AIDLC_FLEET_DOCTOR_CMD.value ?? '')
     .split(' ')
     .filter(Boolean);
-  const engineRepo = resolvedConfig.AIDLC_FLEET_ENGINE_REPO.value ?? '';
+  // issue #11: only an explicitly configured value (env var or saved
+  // local-config) counts as an override — the Channel's own `engine.repo`
+  // is the normal source of truth now, so a bare built-in `default`/`unset`
+  // source must not shadow it (see `real-deps.ts`'s `fetchEngineTarball`).
+  const engineRepoEntry = resolvedConfig.AIDLC_FLEET_ENGINE_REPO;
+  const engineRepo =
+    engineRepoEntry.source === 'env' || engineRepoEntry.source === 'local-config'
+      ? engineRepoEntry.value
+      : undefined;
   const [command, ...rest] = argv;
   const pos = positionals(rest);
 

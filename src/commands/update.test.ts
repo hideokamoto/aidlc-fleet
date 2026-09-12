@@ -10,7 +10,7 @@ describe('runUpdate (CommandLayer)', () => {
   test('exits 3 when VersionGate rejects (BR1.1 reject boundary)', async () => {
     const { deps } = makeFakeDeps({
       channel: makeChannel({
-        engine: { ref: 'new', version: '0.5.0', sha256: 'x' },
+        engine: { repo: 'org/engine', ref: 'new', version: '0.5.0', sha256: 'x' },
         migration_boundaries: [{ before: '0.5.0', action: 'reject' }],
       }),
     });
@@ -21,7 +21,7 @@ describe('runUpdate (CommandLayer)', () => {
   test('exits 3 when a manual boundary lacks --acknowledge-migration', async () => {
     const { deps } = makeFakeDeps({
       channel: makeChannel({
-        engine: { ref: 'new', version: '0.5.0', sha256: 'x' },
+        engine: { repo: 'org/engine', ref: 'new', version: '0.5.0', sha256: 'x' },
         migration_boundaries: [{ before: '0.5.0', action: 'manual' }],
       }),
     });
@@ -31,7 +31,7 @@ describe('runUpdate (CommandLayer)', () => {
 
   test('exits 0 when the gate passes and EngineInstaller succeeds', async () => {
     const { deps } = makeFakeDeps({
-      channel: makeChannel({ engine: { ref: 'new', version: '0.2.0', sha256: 'x' } }),
+      channel: makeChannel({ engine: { repo: 'org/engine', ref: 'new', version: '0.2.0', sha256: 'x' } }),
     });
     const result = await runUpdate({ acknowledgeMigration: false }, deps);
     expect(result.exitCode).toBe(0);
@@ -39,7 +39,7 @@ describe('runUpdate (CommandLayer)', () => {
 
   test('issue #14: notes when doctorConfigured is false on an otherwise successful update', async () => {
     const { deps, logs } = makeFakeDeps({
-      channel: makeChannel({ engine: { ref: 'new', version: '0.2.0', sha256: 'x' } }),
+      channel: makeChannel({ engine: { repo: 'org/engine', ref: 'new', version: '0.2.0', sha256: 'x' } }),
     });
     deps.engineInstaller.install = async () => ({
       success: true,
@@ -53,7 +53,7 @@ describe('runUpdate (CommandLayer)', () => {
 
   test('exits 4 when the gate passes but SuccessVerifier fails', async () => {
     const { deps } = makeFakeDeps({
-      channel: makeChannel({ engine: { ref: 'new', version: '0.2.0', sha256: 'x' } }),
+      channel: makeChannel({ engine: { repo: 'org/engine', ref: 'new', version: '0.2.0', sha256: 'x' } }),
     });
     deps.engineInstaller.install = async () => ({
       success: false,
@@ -84,6 +84,7 @@ describe('runUpdate (CommandLayer)', () => {
      */
     test('a Lockfile produced by a plain `init` (no --adopt) updates successfully', async () => {
       const channelEngine: ChannelEngine = {
+        repo: 'org/engine',
         ref: 'origin-ref',
         version: '0.1.0',
         tag: null,
@@ -117,7 +118,7 @@ describe('runUpdate (CommandLayer)', () => {
 
       const { deps } = makeFakeDeps({
         lockfile: savedLockfile,
-        channel: makeChannel({ engine: { ref: 'new-ref', version: '0.2.0', sha256: 'x' } }),
+        channel: makeChannel({ engine: { repo: 'org/engine', ref: 'new-ref', version: '0.2.0', sha256: 'x' } }),
       });
       const result = await runUpdate({ acknowledgeMigration: false }, deps);
       expect(result.exitCode).toBe(0);
