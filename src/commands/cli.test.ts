@@ -66,9 +66,7 @@ function buildTarHeader(name: string, size: number, typeflag: string): Uint8Arra
 /** Wrapper-directory gzip tarball (GitHub codeload convention), one file entry. */
 function buildPluginGzipTarball(wrapperDir: string): Uint8Array {
   const content = new TextEncoder().encode('{"name":"sample-plugin"}');
-  const chunks: Uint8Array[] = [
-    buildTarHeader(`${wrapperDir}/plugin.json`, content.length, '0'),
-  ];
+  const chunks: Uint8Array[] = [buildTarHeader(`${wrapperDir}/plugin.json`, content.length, '0')];
   const padded = new Uint8Array(Math.ceil(content.length / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE);
   padded.set(content);
   chunks.push(padded);

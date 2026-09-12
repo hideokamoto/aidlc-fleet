@@ -55,7 +55,13 @@ export function resolveHarnessRoot(harness: string): string {
       `real-deps: unknown harness "${harness}" — no entry in .claude/tools/data/plugin-targets.json (no .claude fallback)`,
     );
   }
-  return HARNESS_TARGETS[harness]!.harnessLeaf;
+  const entry = HARNESS_TARGETS[harness];
+  if (!entry) {
+    throw new Error(
+      `real-deps: unknown harness "${harness}" — no entry in .claude/tools/data/plugin-targets.json (no .claude fallback)`,
+    );
+  }
+  return entry.harnessLeaf;
 }
 
 /**
@@ -221,7 +227,7 @@ export async function runDoctorCommand(
   // this command actually run by default now, so a broken default (or a
   // broken override) must be surfaced rather than silently swallowed.
   if (exitCode !== 0 && failures.length === 0) {
-    failures.push(`doctor command "${doctorCommand!.join(' ')}" exited with code ${exitCode}`);
+    failures.push(`doctor command "${doctorCommand?.join(' ')}" exited with code ${exitCode}`);
   }
   return { failures, configured: true };
 }

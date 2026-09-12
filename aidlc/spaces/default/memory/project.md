@@ -65,6 +65,16 @@
 - NEVER `aidlc/` ワークスペース状態を読み書きしない（初期メモリシード複製を (affirmed 2026-09-07)
 除く）。 (affirmed 2026-09-07)
 - NEVER upstream の plugin-compose ロジックを再実装しない。 (affirmed 2026-09-07)
+
+（今回の再実行に関連する新規 Forbidden 項目なし。コードスタイル／ツーリング (affirmed 2026-09-12)
+に直接関連する既存 Forbidden 項目は `project.md` に現時点で存在しない。） (affirmed 2026-09-12)
+--- (affirmed 2026-09-12)
+**注記**: `project.md` にはこの3件以外にも多数の Mandated / Forbidden 項目 (affirmed 2026-09-12)
+（バージョンゲート、レシート管理、シークレット非ハードコード、upstream 不変 (affirmed 2026-09-12)
+更、CircleCI のシークレット/依存関係スキャン等）が存在するが、これらは今回の (affirmed 2026-09-12)
+再実行スコープ（`## Code Style` のリンタ／フォーマッタ選択とその厳格さ）とは (affirmed 2026-09-12)
+無関係のため、本ファイルには転記していない。転記対象は「コードスタイル／ (affirmed 2026-09-12)
+ツーリングに関連する」と明示された項目のみとした。 (affirmed 2026-09-12)
 ## Mandated
 
 <!-- Populated by practices-discovery affirmation gate. -->
@@ -99,6 +109,20 @@ GitHub Secret Scanning, TruffleHog 等）を必須ステップとして組み込
 グリーンであることをマージの条件とする。 (affirmed 2026-09-07)
 - ALWAYS `main` へのマージ後、npm への公開の前に CircleCI ワークフロー上の (affirmed 2026-09-07)
 手動承認ステップを経る。 (affirmed 2026-09-07)
+- ALWAYS Biome（またはその後継のリンタ/フォーマッタ）の `recommended` ルー (affirmed 2026-09-12)
+ルセットからルール単位で緩和・無効化する場合は、その緩和を既定として受け (affirmed 2026-09-12)
+入れる前に、該当コードを修正してルールを満たす対応を優先的に検討する — (affirmed 2026-09-12)
+「ルールを緩めて既存コードに合わせる」のではなく「コードを直してルールを (affirmed 2026-09-12)
+厳格に保つ」を基本方針とする。（インタビュー Q2, Answer B で確定。すでに (affirmed 2026-09-12)
+`noNonNullAssertion` / `noImplicitAnyLet` / `noDelete` / `useNumberNamespace` (affirmed 2026-09-12)
+/ `useTemplate` の5ルールについて実行済み。`correctness.noUnusedVariables: (affirmed 2026-09-12)
+"warn"` は本方針の対象外として意図的に維持されている。） (affirmed 2026-09-12)
+
+- ALWAYS コマンド層 / コアロジック層（バージョンゲート・成功判定ロジック）/ (affirmed 2026-09-12)
+ファイルシステム I/O 層を分離した実装構成にする。（`project.md` より継続、 (affirmed 2026-09-12)
+変更なし） (affirmed 2026-09-12)
+- ALWAYS ファイル所有権 invariant（v0.1 §7）違反を検知した場合、警告に留めず (affirmed 2026-09-12)
+即座に失敗させる（fail fast）。（`project.md` より継続、変更なし） (affirmed 2026-09-12)
 ## Corrections
 
 <!-- Project-specific corrections from human feedback. -->

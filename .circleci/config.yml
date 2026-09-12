@@ -20,8 +20,8 @@ jobs:
     steps:
       - install-deps
       - run:
-          name: Lint (eslint .)
-          command: bun run lint
+          name: Lint (biome ci .)
+          command: bunx biome ci .
 
   typecheck:
     executor: bun-executor

@@ -28,7 +28,7 @@ export function positionals(args: string[]): string[] {
     if (arg.startsWith('--')) {
       // Skip a following value only for `--flag value` form (not `--flag=value`,
       // already self-contained, and not a boolean flag followed by another flag).
-      if (!arg.includes('=') && args[i + 1] !== undefined && !args[i + 1]!.startsWith('--')) {
+      if (!arg.includes('=') && args[i + 1] !== undefined && !args[i + 1]?.startsWith('--')) {
         i += 1;
       }
       continue;

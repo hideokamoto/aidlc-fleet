@@ -11,18 +11,16 @@
     "test": "bun test src/",
     "test:coverage": "bun test --coverage src/",
     "build": "bun build ./bin/aidlc-fleet.ts --outdir ./dist --target bun",
-    "lint": "eslint .",
-    "format": "prettier --write ."
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check ."
   },
   "engines": {
     "bun": ">=1.1.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@types/bun": "^1.1.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0",
-    "prettier": "^3.3.0",
     "typescript": "^5.5.0"
   }
 }

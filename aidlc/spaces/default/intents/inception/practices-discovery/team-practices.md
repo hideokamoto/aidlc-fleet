@@ -1,9 +1,4 @@
-# Team-Level Rules
-
-> This team's affirmed practices and corrections. Loaded after `org.md` as
-> strict-additive guidance; contradictions with broader policy are rejected.
-> Populated by the practices-discovery affirmation gate. Edit at the gate,
-> not directly.
+# Team-Level Rules（確定）
 
 ## Way of Working
 
@@ -163,14 +158,3 @@ green であることで確認可能）。
 *根拠（前回確定分、変更なし）*: developer エージェントのレビューにより、レ
 イヤー境界とエラーハンドリング方針がドラフトに欠けていると指摘された。人間
 はこれを両方とも明示的な必須事項として採用した。（インタビュー Q6 で確定。）
-## Forbidden
-
-<!-- Team-specific forbidden patterns -->
-
-## Mandated
-
-<!-- Team-specific mandates -->
-
-## Corrections
-
-<!-- Self-learning loop appends here. -->
