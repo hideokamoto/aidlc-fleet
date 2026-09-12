@@ -126,6 +126,54 @@ describe('resolveHarnessRoot', () => {
   });
 });
 
+/**
+ * issue #15: a bare `init` with no `--harness` used to silently default to
+ * "claude" — a Cursor (or other non-Claude-Code) project that forgot the
+ * flag got the engine placed under `.claude/` with no signal at all.
+ * `detectDefaultHarness` gives `cli.ts` a real-filesystem signal to use
+ * instead of guessing: an existing `.claude/` directory is far stronger
+ * evidence than a hardcoded default. Real temp-directory integration tests
+ * per team.md's Mandated rule (file-ownership-adjacent filesystem checks
+ * are not verified via mocks).
+ */
+describe('detectDefaultHarness', () => {
+  async function makeProjectRoot(): Promise<string> {
+    return mkdtemp(join(tmpdir(), 'aidlc-fleet-detect-harness-'));
+  }
+
+  test('returns "claude" when the project already has a .claude/ directory', async () => {
+    const { detectDefaultHarness } = await import('./real-deps');
+    const projectRoot = await makeProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      expect(await detectDefaultHarness(projectRoot)).toBe('claude');
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('returns undefined when the project has no .claude/ directory', async () => {
+    const { detectDefaultHarness } = await import('./real-deps');
+    const projectRoot = await makeProjectRoot();
+    try {
+      expect(await detectDefaultHarness(projectRoot)).toBeUndefined();
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('returns undefined when ".claude" exists but is a file, not a directory', async () => {
+    const { detectDefaultHarness } = await import('./real-deps');
+    const projectRoot = await makeProjectRoot();
+    try {
+      await writeFile(join(projectRoot, '.claude'), 'not a directory', 'utf8');
+      expect(await detectDefaultHarness(projectRoot)).toBeUndefined();
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('parseDoctorOutput', () => {
   test('treats each non-blank, non-comment line as one failure', async () => {
     const { parseDoctorOutput } = await import('./real-deps');

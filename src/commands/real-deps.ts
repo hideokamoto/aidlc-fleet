@@ -18,7 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { ChannelClient } from '../io/channel-client';
@@ -56,6 +56,25 @@ export function resolveHarnessRoot(harness: string): string {
     );
   }
   return HARNESS_TARGETS[harness]!.harnessLeaf;
+}
+
+/**
+ * Best-effort default harness for a bare `init` with no `--harness` flag
+ * (issue #15): if this project already has a `.claude/` directory (the
+ * "claude" harness's `harnessLeaf` in `plugin-targets.json`), that existing
+ * layout is a far stronger signal than a hardcoded default, so `init` uses
+ * it without asking. Returns `undefined` when nothing on disk says so —
+ * `cli.ts` then asks the human instead of guessing and silently placing
+ * the engine in the wrong directory.
+ */
+export async function detectDefaultHarness(projectRoot: string): Promise<string | undefined> {
+  const claudeLeaf = HARNESS_TARGETS['claude']?.harnessLeaf ?? '.claude';
+  try {
+    const info = await stat(join(projectRoot, claudeLeaf));
+    return info.isDirectory() ? 'claude' : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface RealDepsConfig {
@@ -441,6 +460,9 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       run: () => runDoctorCommand(config.doctorCommand, { AIDLC_PROJECT_DIR: config.projectRoot }),
     },
     configAccess,
+    harnessDetector: {
+      detectDefault: () => detectDefaultHarness(config.projectRoot),
+    },
     stdout: (line) => {
       process.stdout.write(`${line}\n`);
     },

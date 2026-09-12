@@ -16,13 +16,15 @@ import { runPin, runUnpin } from './pin';
 import { runStatus } from './status';
 import { runDoctor } from './doctor';
 import { runConfig } from './config';
-import { hasFlag, positionals, resolveHarness } from './argv';
+import { hasFlag, positionals, readOption } from './argv';
 import { buildRealDeps, buildConfigAccess } from './real-deps';
 
 export const USAGE = `aidlc-fleet <command> [options]
 
 Commands:
   init [--adopt] [--harness <name>] [--force]
+                            (--harness auto-detected from an existing project
+                            setup when omitted, otherwise you'll be asked)
   update [--acknowledge-migration]
   check
   plugin add <name>
@@ -101,10 +103,44 @@ export async function runCli(argv: string[], projectRoot: string): Promise<numbe
 
   switch (command) {
     case 'init': {
+      // issue #15: an omitted `--harness` used to fall back to "claude"
+      // with no signal at all — a Cursor (or other non-Claude-Code)
+      // project that forgot the flag got the engine silently placed under
+      // `.claude/` instead of the harness it actually uses, with no way to
+      // tell short of harness-specific tooling failing later. Instead of
+      // guessing silently: if this project already has a recognizable
+      // harness directory (today, `.claude/`), use it without asking —
+      // that is a much stronger signal than a hardcoded default. Otherwise
+      // ask the human which harness this project uses, rather than picking
+      // one for them.
+      let harness = readOption(rest, 'harness');
+      if (harness === undefined) {
+        const detected = await deps.harnessDetector.detectDefault();
+        if (detected !== undefined) {
+          harness = detected;
+          deps.stdout(
+            `init: --harness not specified; using "${detected}" (detected an existing ${detected} setup in this project).`,
+          );
+        } else {
+          const answer = (
+            await deps.configAccess.prompt(
+              'aidlc-fleet: --harness not specified and no existing harness setup was detected. ' +
+                'Which AI coding harness does this project use (e.g. claude, cursor, codex, copilot, kiro, kiro-ide, opencode)? ',
+            )
+          ).trim();
+          if (!answer) {
+            process.stderr.write(
+              'aidlc-fleet: no harness selected; re-run with --harness <name> or answer the prompt.\n',
+            );
+            return 1;
+          }
+          harness = answer;
+        }
+      }
       const result = await runInit(
         {
           adopt: hasFlag(rest, 'adopt'),
-          harness: resolveHarness(rest),
+          harness,
           force: hasFlag(rest, 'force'),
         },
         deps,

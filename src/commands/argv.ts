@@ -19,19 +19,6 @@ export function readOption(args: string[], name: string): string | undefined {
   return args[index + 1];
 }
 
-/**
- * Default harness when `--harness` is omitted. Must be a key
- * `.claude/tools/data/plugin-targets.json` actually resolves (real-deps.ts's
- * `resolveHarnessRoot`) — `"claude-code"` is not such a key and made every
- * bare `init`/`update` fail with "unknown harness" against the real CLI.
- */
-export const DEFAULT_HARNESS = 'claude';
-
-/** Resolve the `--harness` value for a command's argv, falling back to {@link DEFAULT_HARNESS}. */
-export function resolveHarness(args: string[]): string {
-  return readOption(args, 'harness') ?? DEFAULT_HARNESS;
-}
-
 /** Positional (non-flag) arguments, in order — everything not starting with `--` and not consumed as an option value is left to the caller to slice manually for simple single-positional commands. */
 export function positionals(args: string[]): string[] {
   const result: string[] = [];

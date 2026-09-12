@@ -14,11 +14,31 @@
  */
 import { test, expect, describe, mock, afterEach } from 'bun:test';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+
+/**
+ * `runCli`'s `init` case prompts via `deps.configAccess.prompt` (real
+ * `node:readline/promises`) when `--harness` is omitted and no existing
+ * harness setup is detected (issue #15). Mocked once, module-wide, so every
+ * bare `init` call in this file resolves immediately instead of blocking on
+ * real stdin; `readlineState.answer` defaults to "claude" (matching the old
+ * hardcoded default) and individual tests override it or inspect
+ * `readlineState.calls` to assert the prompt's own behavior.
+ */
+const readlineState: { answer: string; calls: string[] } = { answer: 'claude', calls: [] };
+mock.module('node:readline/promises', () => ({
+  createInterface: () => ({
+    question: async (question: string) => {
+      readlineState.calls.push(question);
+      return readlineState.answer;
+    },
+    close: () => undefined,
+  }),
+}));
 
 const TAR_BLOCK_SIZE = 512;
 
@@ -147,6 +167,8 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     restoreFetch = undefined;
     restoreEnv?.();
     restoreEnv = undefined;
+    readlineState.answer = 'claude';
+    readlineState.calls = [];
     if (projectRoot) await rm(projectRoot, { recursive: true, force: true });
   });
 
@@ -218,16 +240,63 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     expect(await runCli(['bogus-command'], projectRoot)).toBe(1);
   });
 
-  test('"init" with NO --harness flag succeeds and records harness "claude" — the exact regression this PR fixes (default used to be "claude-code", which real-deps.ts cannot resolve)', async () => {
+  test('"init" with an explicit --harness flag never detects or prompts, and records that harness (issue #15)', async () => {
     const { runCli } = await import('./cli');
     await setUp();
+
+    const exitCode = await runCli(['init', '--harness', 'claude'], projectRoot);
+
+    expect(exitCode).toBe(0);
+    expect(readlineState.calls).toEqual([]);
+    const lockfile = JSON.parse(await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8'));
+    expect(lockfile.engine.harness).toBe('claude');
+    expect(lockfile.engine.ref).toBe('engine-ref');
+  });
+
+  test('"init" with NO --harness flag, but an existing .claude/ directory, auto-detects "claude" without prompting (issue #15)', async () => {
+    const { runCli } = await import('./cli');
+    await setUp();
+    // A pre-existing .claude/ (e.g. from other Claude tooling already used
+    // in this project) is exactly the signal detection looks for — it also
+    // makes this an engine-directory *replace*, which FileOwnershipGuard
+    // (BR2.1, unrelated to this fix) requires --force for; that's a
+    // pre-existing, orthogonal invariant, not part of what's under test
+    // here, so --force is passed to get past it.
+    await mkdir(join(projectRoot, '.claude'), { recursive: true });
+
+    const exitCode = await runCli(['init', '--force'], projectRoot);
+
+    expect(exitCode).toBe(0);
+    expect(readlineState.calls).toEqual([]);
+    const lockfile = JSON.parse(await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8'));
+    expect(lockfile.engine.harness).toBe('claude');
+    expect(lockfile.engine.ref).toBe('engine-ref');
+  });
+
+  test('"init" with NO --harness flag and no existing harness setup prompts interactively and uses the answer (issue #15)', async () => {
+    const { runCli } = await import('./cli');
+    await setUp();
+    readlineState.answer = 'cursor';
 
     const exitCode = await runCli(['init'], projectRoot);
 
     expect(exitCode).toBe(0);
+    expect(readlineState.calls).toHaveLength(1);
+    expect(readlineState.calls[0]).toContain('--harness');
     const lockfile = JSON.parse(await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8'));
-    expect(lockfile.engine.harness).toBe('claude');
-    expect(lockfile.engine.ref).toBe('engine-ref');
+    expect(lockfile.engine.harness).toBe('cursor');
+  });
+
+  test('"init" with NO --harness flag, no detection, and an empty prompt answer fails fast without writing a Lockfile (issue #15)', async () => {
+    const { runCli } = await import('./cli');
+    await setUp();
+    readlineState.answer = '   ';
+
+    const exitCode = await runCli(['init'], projectRoot);
+
+    expect(exitCode).toBe(1);
+    expect(readlineState.calls).toHaveLength(1);
+    await expect(readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8')).rejects.toThrow();
   });
 
   test('the full command lifecycle succeeds end-to-end: init -> status -> check -> plugin add -> plugin remove -> pin -> unpin -> doctor -> update', async () => {

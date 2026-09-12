@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { hasFlag, readOption, positionals, resolveHarness } from './argv';
+import { hasFlag, readOption, positionals } from './argv';
 
 describe('argv helpers', () => {
   test('hasFlag detects a boolean flag', () => {
@@ -17,14 +17,6 @@ describe('argv helpers', () => {
 
   test('readOption returns undefined when absent', () => {
     expect(readOption(['init'], 'harness')).toBeUndefined();
-  });
-
-  test('resolveHarness defaults to "claude" — the only value real-deps.ts can resolve via plugin-targets.json with no --harness given', () => {
-    expect(resolveHarness(['init'])).toBe('claude');
-  });
-
-  test('resolveHarness reads an explicit --harness flag', () => {
-    expect(resolveHarness(['init', '--harness', 'cursor'])).toBe('cursor');
   });
 
   test('positionals extracts non-flag arguments, skipping option values', () => {

@@ -43,6 +43,8 @@ export interface FakeDepsOptions {
   localConfig?: LocalConfigValues;
   /** Queued answers `configAccess.prompt` returns, one per call, in order. */
   promptAnswers?: string[];
+  /** `harnessDetector.detectDefault()`'s return value; defaults to `undefined` (nothing detected). */
+  detectedHarness?: string;
 }
 
 export function makeFakeDeps(options: FakeDepsOptions = {}): {
@@ -133,6 +135,7 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
     },
     doctorRunner: { run: async () => ({ failures: [], configured: true }) },
     configAccess,
+    harnessDetector: { detectDefault: async () => options.detectedHarness },
     stdout: (line) => logs.stdout.push(line),
     stderr: (line) => logs.stderr.push(line),
   };
