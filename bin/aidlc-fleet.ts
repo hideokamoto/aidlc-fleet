@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 /**
- * `aidlc-fleet` CLI entrypoint. All argv/env routing lives in
+ * `aidlc-fleet` CLI entrypoint. All argv/config routing lives in
  * `src/commands/cli.ts` (`runCli`) so it runs under `bun test src/`; this
- * file is only the process-boundary wrapper (real `process.argv`/`env`/
- * `cwd`/`exit`).
+ * file is only the process-boundary wrapper (real `process.argv`/`cwd`/
+ * `exit`).
  */
 import { runCli } from '../src/commands/cli';
 
-runCli(process.argv.slice(2), process.env, process.cwd())
+runCli(process.argv.slice(2), process.cwd())
   .then((exitCode) => {
     process.exit(exitCode);
   })

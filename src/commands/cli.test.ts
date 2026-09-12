@@ -67,6 +67,28 @@ class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
 }
 
+const ENV_KEYS = [
+  'AIDLC_FLEET_CHANNEL_URL',
+  'AIDLC_FLEET_ENGINE_REPO',
+  'AIDLC_FLEET_COMPOSE_CMD',
+  'AIDLC_FLEET_DOCTOR_CMD',
+] as const;
+
+/** Snapshot + clear the 4 config env vars so `buildConfigAccess`'s built-in defaults (issue #18) never leak between tests; callers restore what they need via `process.env[key] = ...`. */
+function snapshotAndClearEnv(): () => void {
+  const original: Partial<Record<(typeof ENV_KEYS)[number], string>> = {};
+  for (const key of ENV_KEYS) {
+    original[key] = process.env[key];
+    delete process.env[key];
+  }
+  return () => {
+    for (const key of ENV_KEYS) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+  };
+}
+
 interface MockEnv {
   channelUrl: string;
   channelJson: unknown;
@@ -118,10 +140,13 @@ function installMocks(opts: MockEnv) {
 describe('runCli — end-to-end through the real bin.ts wiring', () => {
   let projectRoot: string;
   let restoreFetch: (() => void) | undefined;
+  let restoreEnv: (() => void) | undefined;
 
   afterEach(async () => {
     restoreFetch?.();
     restoreFetch = undefined;
+    restoreEnv?.();
+    restoreEnv = undefined;
     if (projectRoot) await rm(projectRoot, { recursive: true, force: true });
   });
 
@@ -161,42 +186,43 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     });
     restoreFetch = restore;
 
-    const env = {
-      AIDLC_FLEET_CHANNEL_URL: channelUrl,
-      AIDLC_FLEET_ENGINE_REPO: engineRepo,
-      AIDLC_FLEET_COMPOSE_CMD: 'compose-bin --compose',
-      AIDLC_FLEET_DOCTOR_CMD: 'doctor-bin',
-    };
+    restoreEnv = snapshotAndClearEnv();
+    process.env.AIDLC_FLEET_CHANNEL_URL = channelUrl;
+    process.env.AIDLC_FLEET_ENGINE_REPO = engineRepo;
+    process.env.AIDLC_FLEET_COMPOSE_CMD = 'compose-bin --compose';
+    process.env.AIDLC_FLEET_DOCTOR_CMD = 'doctor-bin';
 
-    return { spawnCalls, env };
+    return { spawnCalls };
   }
 
   test('help / no-args / unknown command routing never touches the network', async () => {
     const { runCli } = await import('./cli');
     projectRoot = await mkdtemp(join(tmpdir(), 'aidlc-fleet-cli-'));
+    restoreEnv = snapshotAndClearEnv();
 
-    expect(await runCli([], {}, projectRoot)).toBe(1);
-    expect(await runCli(['--help'], {}, projectRoot)).toBe(0);
-    expect(await runCli(['-h'], {}, projectRoot)).toBe(0);
+    expect(await runCli([], projectRoot)).toBe(1);
+    expect(await runCli(['--help'], projectRoot)).toBe(0);
+    expect(await runCli(['-h'], projectRoot)).toBe(0);
   });
 
-  test('AIDLC_FLEET_CHANNEL_URL unset fails fast with exit 1, before any command runs', async () => {
+  test('AIDLC_FLEET_CHANNEL_URL unset fails fast with exit 1, before any command runs (no built-in default exists for it)', async () => {
     const { runCli } = await import('./cli');
     projectRoot = await mkdtemp(join(tmpdir(), 'aidlc-fleet-cli-'));
-    expect(await runCli(['status'], {}, projectRoot)).toBe(1);
+    restoreEnv = snapshotAndClearEnv();
+    expect(await runCli(['status'], projectRoot)).toBe(1);
   });
 
   test('an unrecognized command prints usage and exits 1', async () => {
     const { runCli } = await import('./cli');
-    const { env } = await setUp();
-    expect(await runCli(['bogus-command'], env, projectRoot)).toBe(1);
+    await setUp();
+    expect(await runCli(['bogus-command'], projectRoot)).toBe(1);
   });
 
   test('"init" with NO --harness flag succeeds and records harness "claude" — the exact regression this PR fixes (default used to be "claude-code", which real-deps.ts cannot resolve)', async () => {
     const { runCli } = await import('./cli');
-    const { env } = await setUp();
+    await setUp();
 
-    const exitCode = await runCli(['init'], env, projectRoot);
+    const exitCode = await runCli(['init'], projectRoot);
 
     expect(exitCode).toBe(0);
     const lockfile = JSON.parse(await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8'));
@@ -206,12 +232,12 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
 
   test('the full command lifecycle succeeds end-to-end: init -> status -> check -> plugin add -> plugin remove -> pin -> unpin -> doctor -> update', async () => {
     const { runCli } = await import('./cli');
-    const { env, spawnCalls } = await setUp();
+    const { spawnCalls } = await setUp();
 
-    expect(await runCli(['init', '--harness', 'claude'], env, projectRoot)).toBe(0);
-    expect(await runCli(['status'], env, projectRoot)).toBe(0);
-    expect(await runCli(['check'], env, projectRoot)).toBe(0);
-    expect(await runCli(['plugin', 'add', 'sample-plugin'], env, projectRoot)).toBe(0);
+    expect(await runCli(['init', '--harness', 'claude'], projectRoot)).toBe(0);
+    expect(await runCli(['status'], projectRoot)).toBe(0);
+    expect(await runCli(['check'], projectRoot)).toBe(0);
+    expect(await runCli(['plugin', 'add', 'sample-plugin'], projectRoot)).toBe(0);
 
     const placedPluginFile = await readFile(
       join(projectRoot, '.claude', 'plugins', 'sample-plugin', 'plugin.json'),
@@ -219,15 +245,15 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     );
     expect(JSON.parse(placedPluginFile).name).toBe('sample-plugin');
 
-    expect(await runCli(['plugin', 'remove', 'sample-plugin'], env, projectRoot)).toBe(0);
-    expect(await runCli(['pin', 'deadbeef'], env, projectRoot)).toBe(0);
+    expect(await runCli(['plugin', 'remove', 'sample-plugin'], projectRoot)).toBe(0);
+    expect(await runCli(['pin', 'deadbeef'], projectRoot)).toBe(0);
 
     const pinnedLockfile = JSON.parse(await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8'));
     expect(pinnedLockfile.pin).toBe('deadbeef');
 
-    expect(await runCli(['unpin'], env, projectRoot)).toBe(0);
-    expect(await runCli(['doctor'], env, projectRoot)).toBe(0);
-    expect(await runCli(['update'], env, projectRoot)).toBe(0);
+    expect(await runCli(['unpin'], projectRoot)).toBe(0);
+    expect(await runCli(['doctor'], projectRoot)).toBe(0);
+    expect(await runCli(['update'], projectRoot)).toBe(0);
 
     // The configured compose command was actually shelled out to across
     // the lifecycle (init, plugin add, plugin remove, update each compose).
@@ -235,34 +261,51 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     expect(spawnCalls.some((c) => c.cmd === 'doctor-bin')).toBe(true);
   });
 
+  test('"config" runs even with AIDLC_FLEET_CHANNEL_URL unset, and reports every resolved value/source', async () => {
+    const { runCli } = await import('./cli');
+    await setUp();
+    delete process.env.AIDLC_FLEET_CHANNEL_URL;
+    expect(await runCli(['config'], projectRoot)).toBe(0);
+  });
+
+  test('"doctor" runs even with AIDLC_FLEET_CHANNEL_URL unset and reports it as a failure', async () => {
+    const { runCli } = await import('./cli');
+    projectRoot = await mkdtemp(join(tmpdir(), 'aidlc-fleet-cli-'));
+    restoreEnv = snapshotAndClearEnv();
+    // No Lockfile exists yet in a fresh project root, so this exercises
+    // the "no Lockfile" branch rather than the config-failure branch —
+    // both are legitimate non-zero outcomes for a totally fresh project.
+    expect(await runCli(['doctor'], projectRoot)).not.toBe(0);
+  });
+
   test('"plugin add" for a name the channel never declared fails validation without ever calling PluginManager', async () => {
     const { runCli } = await import('./cli');
-    const { env } = await setUp();
-    expect(await runCli(['init'], env, projectRoot)).toBe(0);
-    expect(await runCli(['plugin', 'add', 'not-a-real-plugin'], env, projectRoot)).toBe(1);
+    await setUp();
+    expect(await runCli(['init'], projectRoot)).toBe(0);
+    expect(await runCli(['plugin', 'add', 'not-a-real-plugin'], projectRoot)).toBe(1);
   });
 
   test('"pin" with a malformed ref is rejected before touching the Lockfile', async () => {
     const { runCli } = await import('./cli');
-    const { env } = await setUp();
-    expect(await runCli(['init'], env, projectRoot)).toBe(0);
+    await setUp();
+    expect(await runCli(['init'], projectRoot)).toBe(0);
     const before = await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8');
-    expect(await runCli(['pin', 'not a valid ref!'], env, projectRoot)).not.toBe(0);
+    expect(await runCli(['pin', 'not a valid ref!'], projectRoot)).not.toBe(0);
     const after = await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8');
     expect(after).toBe(before);
   });
 
   test('a bare "plugin" with no subcommand fails with usage guidance', async () => {
     const { runCli } = await import('./cli');
-    const { env } = await setUp();
-    expect(await runCli(['init'], env, projectRoot)).toBe(0);
-    expect(await runCli(['plugin'], env, projectRoot)).toBe(1);
+    await setUp();
+    expect(await runCli(['init'], projectRoot)).toBe(0);
+    expect(await runCli(['plugin'], projectRoot)).toBe(1);
   });
 
   test('a bare "pin" with no ref fails with usage guidance', async () => {
     const { runCli } = await import('./cli');
-    const { env } = await setUp();
-    expect(await runCli(['init'], env, projectRoot)).toBe(0);
-    expect(await runCli(['pin'], env, projectRoot)).toBe(1);
+    await setUp();
+    expect(await runCli(['init'], projectRoot)).toBe(0);
+    expect(await runCli(['pin'], projectRoot)).toBe(1);
   });
 });
