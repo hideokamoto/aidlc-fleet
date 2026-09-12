@@ -44,7 +44,7 @@ describe('exit-code helper (M8 canonical 0/1/2/3/4 contract)', () => {
     expect(exitCodeForLockfileAccess('malformed')).toBe(1);
   });
 
-  test('INVALID_REF_EXIT_CODE: single source of truth for pin.ts\'s invalid-ref exit code -> 1', () => {
+  test("INVALID_REF_EXIT_CODE: single source of truth for pin.ts's invalid-ref exit code -> 1", () => {
     expect(INVALID_REF_EXIT_CODE).toBe(1);
   });
 });

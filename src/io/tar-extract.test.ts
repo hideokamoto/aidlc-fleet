@@ -181,17 +181,22 @@ describe('extractTarGz（実ファイルシステム）', () => {
   test('正常系: ラッパーディレクトリ付き gzip tar を展開し、期待するファイルツリーが実際に存在する（FR1.1〜FR1.4）', async () => {
     const archive = buildTarArchive([
       { name: 'example-plugin-abc123/', typeflag: '5' },
-      { name: 'example-plugin-abc123/claude-code-plugin/plugin.json', typeflag: '0', content: '{"name":"example-plugin"}' },
-      { name: 'example-plugin-abc123/claude-code-plugin/README.md', typeflag: '0', content: '# example' },
+      {
+        name: 'example-plugin-abc123/claude-code-plugin/plugin.json',
+        typeflag: '0',
+        content: '{"name":"example-plugin"}',
+      },
+      {
+        name: 'example-plugin-abc123/claude-code-plugin/README.md',
+        typeflag: '0',
+        content: '# example',
+      },
     ]);
     const gzipped = gzipSync(archive);
 
     await extractTarGz(gzipped, destDir);
 
-    const pluginJson = await readFile(
-      join(destDir, 'claude-code-plugin', 'plugin.json'),
-      'utf8',
-    );
+    const pluginJson = await readFile(join(destDir, 'claude-code-plugin', 'plugin.json'), 'utf8');
     expect(pluginJson).toBe('{"name":"example-plugin"}');
     const readme = await readFile(join(destDir, 'claude-code-plugin', 'README.md'), 'utf8');
     expect(readme).toBe('# example');

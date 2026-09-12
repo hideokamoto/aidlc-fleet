@@ -7,8 +7,7 @@
 import type { Channel, MigrationBoundary } from '../types/channel';
 import type { Lockfile } from '../types/lockfile';
 
-export type VersionGateRejectReason =
-  'reject-boundary' | 'manual-boundary-unacknowledged';
+export type VersionGateRejectReason = 'reject-boundary' | 'manual-boundary-unacknowledged';
 
 export interface VersionGateOptions {
   /** Whether `--acknowledge-migration` was passed (BR1.2). */

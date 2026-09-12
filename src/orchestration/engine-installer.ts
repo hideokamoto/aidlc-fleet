@@ -69,7 +69,10 @@ export class EngineInstaller {
     const bytes = await this.ports.fetchEngineTarball(engine);
 
     // BR2.1-BR2.4: fail fast before any write if the guard refuses.
-    await this.ports.checkEngineDirectoryReplace({ force: options.force, harness: options.harness });
+    await this.ports.checkEngineDirectoryReplace({
+      force: options.force,
+      harness: options.harness,
+    });
 
     await this.ports.placeEngine(bytes, options.harness);
 
