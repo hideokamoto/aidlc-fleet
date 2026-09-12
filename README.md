@@ -79,20 +79,39 @@ bun bin/aidlc-fleet.ts --help
 | 変数 | 必須 | 説明 |
 |---|---|---|
 | `AIDLC_FLEET_CHANNEL_URL` | ✅ 全コマンド共通 | Channel 宣言を取得する URL。未設定だと `init` を含むすべてのコマンドがその場で失敗する。スキーマは [`examples/README.md`](examples/README.md)、実装は `src/types/channel.ts` の `parseChannel()` を参照。サンプルは [`examples/channel.example.json`](examples/channel.example.json)。 |
-| `AIDLC_FLEET_ENGINE_REPO` | `init`/`update` で必須 | エンジンの tarball を取得する `owner/name` 形式の GitHub リポジトリ。Channel 自体は `engine.repo` を持たない(チャネル運用者が管理する契約の外)ため、この変数で補う。 |
-| `AIDLC_FLEET_COMPOSE_CMD` | 変更系コマンドで必須 | upstream の compose 処理を呼び出す外部コマンド(スペース区切り、例: `bun /path/to/compose.ts`)。このCLIは upstream の compose/インストールロジックを再実装しない方針のため、必ず外部コマンドとして設定する。 |
-| `AIDLC_FLEET_DOCTOR_CMD` | 任意 | upstream の doctor 検証を呼び出す外部コマンド(スペース区切り)。未設定時は「報告すべき失敗なし」として扱われ、検証が一部弱まるだけでコマンド自体は失敗しない。 |
+| `AIDLC_FLEET_ENGINE_REPO` | `init`/`update` で必須 | エンジンの tarball を取得する `owner/name` 形式の GitHub リポジトリ。Channel 自体は `engine.repo` を持たない(チャネル運用者が管理する契約の外)ため、この変数で補う。値の例: `awslabs/aidlc-workflows`(このCLIが配布対象とする upstream 本体そのもの)。 |
+| `AIDLC_FLEET_COMPOSE_CMD` | 変更系コマンドで必須 | upstream の compose 処理を呼び出す外部コマンド(スペース区切り)。このCLIは upstream の compose/インストールロジックを再実装しない方針のため、必ず外部コマンドとして設定する。値の例: `bun .claude/tools/data/plugin-hooks-template/compose.ts`(下記参照)。 |
+| `AIDLC_FLEET_DOCTOR_CMD` | 任意 | upstream の doctor 検証を呼び出す外部コマンド(スペース区切り)。未設定時は「報告すべき失敗なし」として扱われ、検証が一部弱まるだけでコマンド自体は失敗しない。値の例は下記の既知の懸念を参照。 |
 
-`AIDLC_FLEET_COMPOSE_CMD` / `AIDLC_FLEET_DOCTOR_CMD` が指すべきスクリプトの実体は、
-**このCLIが対象とするプロジェクトに実際にインストールされた AI-DLC エンジン
-(upstream [`awslabs/aidlc-workflows`](https://github.com/awslabs/aidlc-workflows) の配布物)
-が提供するもの** であり、この `aidlc-fleet-cli` 自身が同梱するものではない。
-具体的には、対象プロジェクトのハーネスディレクトリ(`init --harness` で選んだ
-ハーネスに対応する `.claude/tools/` や `.cursor/tools/` など)配下にある
-compose/doctor 相当のスクリプトを `bun` 経由で呼び出すコマンドを設定する。
-正確なファイル名・パスは upstream のバージョンやハーネスによって変わりうるため、
-固定パスを前提にせず、対象プロジェクトの実際のツリーを確認して設定すること
-(このリポジトリ自身の `.claude/tools/`・`.cursor/tools/` が、その一例)。
+#### `COMPOSE_CMD`/`DOCTOR_CMD` の実体(upstream `awslabs/aidlc-workflows` を実際に確認して裏取り済み)
+
+**COMPOSE_CMD**: upstream の `scripts/plugin-hooks-template/compose.ts` が
+`package.ts` のビルドでそのまま `<harnessDir>/tools/data/plugin-hooks-template/compose.ts`
+にコピーされて配布される。中身は「新しいファイルをプロジェクトへコピーし、
+ステージグラフを再コンパイルする」処理で、`PluginManager`/`EngineInstaller`
+の `runCompose` が期待する処理と一致する。`AIDLC_PROJECT_DIR` 環境変数を
+読む作りになっており、これはこのCLIが `runCompose` 呼び出し時に自動で
+注入する変数名と一致する(`real-deps.ts`)。このリポジトリ自身にも
+`.claude/tools/data/plugin-hooks-template/compose.ts` /
+`.cursor/tools/data/plugin-hooks-template/compose.ts` として実在するため、
+このリポジトリ自身を対象にする場合は以下がそのまま動く値になる:
+
+```bash
+export AIDLC_FLEET_COMPOSE_CMD="bun .claude/tools/data/plugin-hooks-template/compose.ts"
+```
+
+**DOCTOR_CMD**: upstream の最新版では、統合CLI `aidlc.ts` の `doctor` サブコマンドが
+`core/tools/aidlc-doctor.ts` に委譲される(`bun <harnessDir>/tools/aidlc-doctor.ts doctor`)。
+**既知の懸念**: `aidlc-doctor.ts` の既定出力は色付きの人間向け複数行レポートで、
+`--json`(1行のJSON)・`--quiet`(1行のサマリ文)というモードもあるが、
+いずれも `aidlc-fleet-cli` 側の `parseDoctorOutput()`(`src/commands/real-deps.ts`)
+が前提にしている「空行と`#`行を除く各行を1件の失敗として扱う」という解釈とは
+形式が噛み合わない。加えて、**このリポジトリ自身が現在同梱しているエンジンの
+バージョンには `aidlc-doctor.ts` 自体が存在しない**(統合CLI化より前の世代の
+ツリーをvendorしている)。したがって、このリポジトリ内で今すぐ動く
+`DOCTOR_CMD` の値は無く、`aidlc-doctor.ts` を含む新しいエンジンに更新した上で、
+かつ出力形式の不一致を別途解消しない限り、`DOCTOR_CMD` は事実上使えない状態にある
+(この不一致は `aidlc-fleet-cli` 側の別issueとして切り出す価値がある)。
 
 ### Channel ファイル
 
