@@ -230,6 +230,42 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     expect(lockfile.engine.ref).toBe('engine-ref');
   });
 
+  test('"init" with no --harness flag prints a loud warning to stderr instead of silently defaulting (issue #15)', async () => {
+    const { runCli } = await import('./cli');
+    await setUp();
+
+    const stderrSpy = mock((_msg: string) => true);
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = stderrSpy as unknown as typeof process.stderr.write;
+    try {
+      const exitCode = await runCli(['init'], projectRoot);
+      expect(exitCode).toBe(0);
+      expect(
+        stderrSpy.mock.calls.some(
+          ([msg]) => String(msg).includes('--harness') && String(msg).includes('claude'),
+        ),
+      ).toBe(true);
+    } finally {
+      process.stderr.write = originalStderrWrite;
+    }
+  });
+
+  test('"init" with an explicit --harness flag never prints the default-harness warning', async () => {
+    const { runCli } = await import('./cli');
+    await setUp();
+
+    const stderrSpy = mock(() => true);
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = stderrSpy as unknown as typeof process.stderr.write;
+    try {
+      const exitCode = await runCli(['init', '--harness', 'claude'], projectRoot);
+      expect(exitCode).toBe(0);
+      expect(stderrSpy).not.toHaveBeenCalled();
+    } finally {
+      process.stderr.write = originalStderrWrite;
+    }
+  });
+
   test('the full command lifecycle succeeds end-to-end: init -> status -> check -> plugin add -> plugin remove -> pin -> unpin -> doctor -> update', async () => {
     const { runCli } = await import('./cli');
     const { spawnCalls } = await setUp();

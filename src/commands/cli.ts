@@ -16,7 +16,7 @@ import { runPin, runUnpin } from './pin';
 import { runStatus } from './status';
 import { runDoctor } from './doctor';
 import { runConfig } from './config';
-import { hasFlag, positionals, resolveHarness } from './argv';
+import { hasFlag, positionals, readOption, resolveHarness } from './argv';
 import { buildRealDeps, buildConfigAccess } from './real-deps';
 
 export const USAGE = `aidlc-fleet <command> [options]
@@ -101,6 +101,20 @@ export async function runCli(argv: string[], projectRoot: string): Promise<numbe
 
   switch (command) {
     case 'init': {
+      // issue #15: an omitted `--harness` used to fall back to "claude"
+      // with no signal at all — a Cursor (or other non-Claude-Code)
+      // project that forgot the flag got the engine silently placed under
+      // `.claude/` instead of the harness it actually uses. Keep the
+      // convenient default (removing it outright would make every bare
+      // `init` fail even for the common Claude Code case), but make the
+      // fallback loud so the omission is visible at the point it happens.
+      if (readOption(rest, 'harness') === undefined) {
+        process.stderr.write(
+          `aidlc-fleet: --harness not specified; defaulting to "${resolveHarness(rest)}". ` +
+            'If this project uses a different AI coding harness (e.g. "cursor"), pass ' +
+            '--harness <name> explicitly, or the engine will be placed in the wrong directory.\n',
+        );
+      }
       const result = await runInit(
         {
           adopt: hasFlag(rest, 'adopt'),
