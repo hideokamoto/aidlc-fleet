@@ -54,7 +54,13 @@ export interface InstalledStateAccess {
 
 /** Narrow port onto upstream `doctor`, wrapped by `SuccessVerifier` (BR3.4, S2). */
 export interface DoctorRunner {
-  run(): Promise<{ failures: string[] }>;
+  /**
+   * `configured` (issue #14): whether a doctor command was actually
+   * invoked. `false` with `failures: []` means "no AIDLC_FLEET_DOCTOR_CMD
+   * to run," not "ran and found nothing" — `doctor`'s own output must
+   * not conflate the two.
+   */
+  run(): Promise<{ failures: string[]; configured: boolean }>;
 }
 
 /**

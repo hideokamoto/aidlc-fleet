@@ -125,7 +125,7 @@ export function makeFakeDeps(options: FakeDepsOptions = {}): {
     installedState: {
       read: async () => ({ installedEngineRef: lockfile.engine.ref, installedPluginRefs: {} }),
     },
-    doctorRunner: { run: async () => ({ failures: [] }) },
+    doctorRunner: { run: async () => ({ failures: [], configured: true }) },
     configAccess,
     stdout: (line) => logs.stdout.push(line),
     stderr: (line) => logs.stderr.push(line),

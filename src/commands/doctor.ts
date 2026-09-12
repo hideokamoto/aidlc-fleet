@@ -44,7 +44,17 @@ export async function runDoctor(deps: CommandDeps): Promise<CommandResult> {
   const allFailures = [...configFailures, ...wrapped.effectiveFailures];
 
   if (allFailures.length === 0) {
-    deps.stdout('doctor: no unaddressed failures.');
+    // issue #14: distinguish "ran and found nothing" from "never ran" —
+    // an unconfigured AIDLC_FLEET_DOCTOR_CMD is not a failure (exit code
+    // stays 0 below), but reusing the same message here would make the
+    // two indistinguishable to whoever reads doctor's output.
+    if (raw.configured) {
+      deps.stdout('doctor: no unaddressed failures.');
+    } else {
+      deps.stdout(
+        'doctor: not configured — AIDLC_FLEET_DOCTOR_CMD is unset, so no checks were run.',
+      );
+    }
   } else {
     deps.stderr(`doctor: ${allFailures.length} failure(s): ${allFailures.join(', ')}`);
   }

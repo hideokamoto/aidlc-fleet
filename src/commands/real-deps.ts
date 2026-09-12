@@ -169,15 +169,16 @@ export function parseDoctorOutput(stdout: string): string[] {
 export async function runDoctorCommand(
   doctorCommand: string[] | undefined,
   env: Record<string, string>,
-): Promise<{ failures: string[] }> {
+): Promise<{ failures: string[]; configured: boolean }> {
   const [cmd, ...args] = doctorCommand ?? [];
   if (!cmd) {
     // No upstream doctor command configured (AIDLC_FLEET_DOCTOR_CMD
-    // unset): safe default is "no unaddressed failures reported," same
-    // as an upstream doctor run that found nothing wrong — this never
-    // silently swallows a real failure, since there is no real
-    // invocation to swallow one from.
-    return { failures: [] };
+    // unset/empty): report zero failures (never silently invents one,
+    // since there is no real invocation to have found one) but flag
+    // `configured: false` so callers (issue #14) can tell "never
+    // checked" apart from "checked, found nothing" instead of both
+    // collapsing into the same `{ failures: [] }` shape.
+    return { failures: [], configured: false };
   }
   const { stdout, exitCode } = await new Promise<{ stdout: string; exitCode: number }>(
     (resolve, reject) => {
@@ -203,7 +204,7 @@ export async function runDoctorCommand(
   if (exitCode !== 0 && failures.length === 0) {
     failures.push(`doctor command "${doctorCommand!.join(' ')}" exited with code ${exitCode}`);
   }
-  return { failures };
+  return { failures, configured: true };
 }
 
 async function readDropsFile(projectRoot: string): Promise<string> {
