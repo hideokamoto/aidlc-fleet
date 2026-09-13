@@ -5,6 +5,7 @@ import {
   resolveEnvConfig,
   resolveEnvConfigKey,
 } from './env-config-resolver';
+import { assertDefined } from '../test-support/assert-defined';
 
 describe('resolveEnvConfigKey (CoreLogicLayer)', () => {
   test('env set, local-config unset -> env wins', () => {
@@ -36,7 +37,7 @@ describe('resolveEnvConfigKey (CoreLogicLayer)', () => {
   });
 
   test('a value equal to the built-in default still reports its real source, not "default"', () => {
-    const defaultValue = ENV_CONFIG_DEFAULTS.AIDLC_FLEET_ENGINE_REPO!;
+    const defaultValue = assertDefined(ENV_CONFIG_DEFAULTS.AIDLC_FLEET_ENGINE_REPO);
     const viaEnv = resolveEnvConfigKey('AIDLC_FLEET_ENGINE_REPO', defaultValue, undefined);
     expect(viaEnv.source).toBe('env');
     const viaLocal = resolveEnvConfigKey('AIDLC_FLEET_ENGINE_REPO', undefined, defaultValue);

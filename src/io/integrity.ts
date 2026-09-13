@@ -23,8 +23,7 @@ export class TarballIntegrityError extends Error {
 
   constructor(url: string, expectedSha256: string, actualSha256: string) {
     super(
-      `ChannelClient: sha256 mismatch for ${url} — expected ${expectedSha256}, got ${actualSha256}. ` +
-        'This is a hard failure; the download is not retried automatically.',
+      `ChannelClient: sha256 mismatch for ${url} — expected ${expectedSha256}, got ${actualSha256}. This is a hard failure; the download is not retried automatically.`,
     );
     this.name = 'TarballIntegrityError';
     this.url = url;

@@ -86,24 +86,24 @@ describe('parseTar', () => {
     const archive = buildTarArchive([{ name: 'hello.txt', typeflag: '0', content: 'hello world' }]);
     const entries = parseTar(archive);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.name).toBe('hello.txt');
-    expect(entries[0]!.type).toBe('file');
-    expect(new TextDecoder().decode(entries[0]!.data)).toBe('hello world');
+    expect(entries[0]?.name).toBe('hello.txt');
+    expect(entries[0]?.type).toBe('file');
+    expect(new TextDecoder().decode(entries[0]?.data)).toBe('hello world');
   });
 
   test('ディレクトリエントリを正しくパースする', () => {
     const archive = buildTarArchive([{ name: 'some-dir/', typeflag: '5' }]);
     const entries = parseTar(archive);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.name).toBe('some-dir/');
-    expect(entries[0]!.type).toBe('directory');
+    expect(entries[0]?.name).toBe('some-dir/');
+    expect(entries[0]?.type).toBe('directory');
   });
 
   test('シンボリックリンクエントリ（typeflag "2"）を type: "symlink" として検出する', () => {
     const archive = buildTarArchive([{ name: 'link.txt', typeflag: '2' }]);
     const entries = parseTar(archive);
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.type).toBe('symlink');
+    expect(entries[0]?.type).toBe('symlink');
   });
 
   test('複数エントリを順序通りにパースする', () => {
@@ -181,17 +181,22 @@ describe('extractTarGz（実ファイルシステム）', () => {
   test('正常系: ラッパーディレクトリ付き gzip tar を展開し、期待するファイルツリーが実際に存在する（FR1.1〜FR1.4）', async () => {
     const archive = buildTarArchive([
       { name: 'example-plugin-abc123/', typeflag: '5' },
-      { name: 'example-plugin-abc123/claude-code-plugin/plugin.json', typeflag: '0', content: '{"name":"example-plugin"}' },
-      { name: 'example-plugin-abc123/claude-code-plugin/README.md', typeflag: '0', content: '# example' },
+      {
+        name: 'example-plugin-abc123/claude-code-plugin/plugin.json',
+        typeflag: '0',
+        content: '{"name":"example-plugin"}',
+      },
+      {
+        name: 'example-plugin-abc123/claude-code-plugin/README.md',
+        typeflag: '0',
+        content: '# example',
+      },
     ]);
     const gzipped = gzipSync(archive);
 
     await extractTarGz(gzipped, destDir);
 
-    const pluginJson = await readFile(
-      join(destDir, 'claude-code-plugin', 'plugin.json'),
-      'utf8',
-    );
+    const pluginJson = await readFile(join(destDir, 'claude-code-plugin', 'plugin.json'), 'utf8');
     expect(pluginJson).toBe('{"name":"example-plugin"}');
     const readme = await readFile(join(destDir, 'claude-code-plugin', 'README.md'), 'utf8');
     expect(readme).toBe('# example');

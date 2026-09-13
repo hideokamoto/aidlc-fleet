@@ -165,5 +165,5 @@ export function parseLockfile(raw: string): Lockfile {
 
 /** Serialize a Lockfile back to its canonical on-disk JSON form (pretty-printed, trailing newline). */
 export function serializeLockfile(lockfile: Lockfile): string {
-  return JSON.stringify(lockfile, null, 2) + '\n';
+  return `${JSON.stringify(lockfile, null, 2)}\n`;
 }

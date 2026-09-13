@@ -18,7 +18,7 @@ test('parseLockfile throws a distinct LockfileParseError on malformed JSON (BR8.
 
 test('parseLockfile throws LockfileParseError when a required field is missing', () => {
   const broken = { ...validFixture } as Record<string, unknown>;
-  delete broken.channel_commit;
+  broken.channel_commit = undefined;
   expect(() => parseLockfile(JSON.stringify(broken))).toThrow(LockfileParseError);
 });
 
@@ -36,7 +36,7 @@ test('parseLockfile accepts a non-null pin value', () => {
 
 test('parseLockfile defaults missing optional array fields per entities.md defaults', () => {
   const noKnownFailures = { ...validFixture } as Record<string, unknown>;
-  delete noKnownFailures.known_failures;
+  noKnownFailures.known_failures = undefined;
   const lockfile = parseLockfile(JSON.stringify(noKnownFailures));
   expect(lockfile.known_failures).toEqual([]);
 });

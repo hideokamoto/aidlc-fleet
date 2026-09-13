@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import { assertDefined } from '../test-support/assert-defined';
 
 const TAR_BLOCK_SIZE = 512;
 
@@ -279,7 +280,7 @@ describe('runDoctorCommand', () => {
     const result = await runDoctorCommand(['doctor-bin', '--json'], { AIDLC_PROJECT_DIR: '/p' });
     expect(result.failures).toEqual(['missing plugin foo', 'stale engine ref']);
     expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [cmd, args] = spawnMock.mock.calls[0]!;
+    const [cmd, args] = assertDefined(spawnMock.mock.calls[0]);
     expect(cmd).toBe('doctor-bin');
     expect(args).toEqual(['--json']);
   });
@@ -435,7 +436,7 @@ describe('buildRealDeps().pluginManager doctorFailures wiring', () => {
       // The doctor command was actually shelled out to (not skipped/stubbed).
       const doctorCalls = calls.filter((c) => c.cmd === 'doctor-bin');
       expect(doctorCalls).toHaveLength(1);
-      expect(doctorCalls[0]!.args).toEqual(['--json']);
+      expect(doctorCalls[0]?.args).toEqual(['--json']);
       // Its two reported failures flow through SuccessVerifier's BR3.1
       // third predicate and block the plugin-remove write.
       expect(result.success).toBe(false);
