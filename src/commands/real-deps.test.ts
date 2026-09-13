@@ -175,17 +175,40 @@ describe('detectDefaultHarness', () => {
   });
 });
 
+/**
+ * issue #19 (Problem 1): upstream `aidlc-doctor.ts` never produces "one
+ * failure per non-blank, non-`#` line" — default mode is a human-readable
+ * multi-line report (including passing items), `--quiet` is a single
+ * summary line ("N passed, N warnings, N failed"), and `--json` is a
+ * single-line `{schemaVersion, ok, code, status, message, data}` blob.
+ * `parseDoctorOutput` now treats stdout as that `--json` blob and extracts
+ * `data.failed` — the only shape upstream actually documents for failures.
+ */
 describe('parseDoctorOutput', () => {
-  test('treats each non-blank, non-comment line as one failure', async () => {
+  test('extracts the failure list from --json output\'s data.failed array', async () => {
     const { parseDoctorOutput } = await import('./real-deps');
-    const out = parseDoctorOutput('missing plugin foo\nstale engine ref\n');
-    expect(out).toEqual(['missing plugin foo', 'stale engine ref']);
+    const stdout = JSON.stringify({
+      schemaVersion: 1,
+      ok: false,
+      code: 1,
+      status: 'fail',
+      message: '2 checks failed',
+      data: { failed: ['thing A failed', 'thing B failed'], passed: ['thing C'] },
+    });
+    expect(parseDoctorOutput(stdout)).toEqual(['thing A failed', 'thing B failed']);
   });
 
-  test('drops blank lines and lines starting with "#"', async () => {
+  test('a clean --json run (ok: true, empty data.failed) parses to no failures', async () => {
     const { parseDoctorOutput } = await import('./real-deps');
-    const out = parseDoctorOutput('# doctor report\n\nmissing plugin foo\n   \n# end\n');
-    expect(out).toEqual(['missing plugin foo']);
+    const stdout = JSON.stringify({
+      schemaVersion: 1,
+      ok: true,
+      code: 0,
+      status: 'ok',
+      message: 'all checks passed',
+      data: { failed: [], passed: ['thing A', 'thing B'] },
+    });
+    expect(parseDoctorOutput(stdout)).toEqual([]);
   });
 
   test('empty stdout parses to no failures', async () => {
@@ -193,9 +216,40 @@ describe('parseDoctorOutput', () => {
     expect(parseDoctorOutput('')).toEqual([]);
   });
 
-  test('trims surrounding whitespace on each retained line', async () => {
+  test('tolerates a trailing newline after the single JSON line', async () => {
     const { parseDoctorOutput } = await import('./real-deps');
-    expect(parseDoctorOutput('  missing plugin foo  \n')).toEqual(['missing plugin foo']);
+    const stdout = `${JSON.stringify({
+      schemaVersion: 1,
+      ok: false,
+      code: 1,
+      status: 'fail',
+      message: 'x',
+      data: { failed: ['missing plugin foo'] },
+    })}\n`;
+    expect(parseDoctorOutput(stdout)).toEqual(['missing plugin foo']);
+  });
+
+  /**
+   * Locks in the new contract: upstream's default human-readable,
+   * multi-line report (with passing lines interleaved) must NOT be
+   * misparsed as one-failure-per-line anymore — it is explicitly rejected
+   * rather than silently miscounting passing items as failures.
+   */
+  test('rejects legacy human-readable multi-line output instead of misparsing it', async () => {
+    const { parseDoctorOutput } = await import('./real-deps');
+    const humanReadable = [
+      'Checking engine install...',
+      '✔ engine present',
+      '✖ plugin foo missing',
+      '',
+      '1 passed, 1 failed',
+    ].join('\n');
+    expect(() => parseDoctorOutput(humanReadable)).toThrow(/JSON/);
+  });
+
+  test('rejects a --quiet-style single summary line rather than treating it as one failure', async () => {
+    const { parseDoctorOutput } = await import('./real-deps');
+    expect(() => parseDoctorOutput('1 passed, 1 warnings, 1 failed')).toThrow(/JSON/);
   });
 });
 
@@ -261,15 +315,22 @@ describe('runDoctorCommand', () => {
     expect(result.failures).toEqual([]);
   });
 
-  test('spawns the configured command, captures stdout, and parses failure lines', async () => {
+  test('spawns the configured command, captures --json stdout, and parses data.failed', async () => {
     class FakeChild extends EventEmitter {
       stdout = new EventEmitter();
     }
     const child = new FakeChild();
+    const doctorJson = JSON.stringify({
+      schemaVersion: 1,
+      ok: false,
+      code: 1,
+      status: 'fail',
+      message: '2 checks failed',
+      data: { failed: ['missing plugin foo', 'stale engine ref'] },
+    });
     const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
       queueMicrotask(() => {
-        child.stdout.emit('data', Buffer.from('missing plugin foo\n'));
-        child.stdout.emit('data', Buffer.from('stale engine ref\n'));
+        child.stdout.emit('data', Buffer.from(`${doctorJson}\n`));
         child.emit('close', 0);
       });
       return child;
@@ -283,6 +344,46 @@ describe('runDoctorCommand', () => {
     const [cmd, args] = assertDefined(spawnMock.mock.calls[0]);
     expect(cmd).toBe('doctor-bin');
     expect(args).toEqual(['--json']);
+  });
+
+  /**
+   * issue #19 (Problem 1): `runDoctorCommand` must force `--json` onto the
+   * configured doctor command so the output is always the machine-readable
+   * shape `parseDoctorOutput` expects, without duplicating the flag when
+   * it is already configured.
+   */
+  test('appends --json to the configured doctor command when not already present', async () => {
+    class FakeChild extends EventEmitter {
+      stdout = new EventEmitter();
+    }
+    const child = new FakeChild();
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const { runDoctorCommand } = await import('./real-deps');
+
+    await runDoctorCommand(['doctor-bin'], {});
+    const [, args] = assertDefined(spawnMock.mock.calls[0]);
+    expect(args).toEqual(['--json']);
+  });
+
+  test('does not duplicate --json when the configured command already includes it', async () => {
+    class FakeChild extends EventEmitter {
+      stdout = new EventEmitter();
+    }
+    const child = new FakeChild();
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const { runDoctorCommand } = await import('./real-deps');
+
+    await runDoctorCommand(['doctor-bin', '--verbose', '--json'], {});
+    const [, args] = assertDefined(spawnMock.mock.calls[0]);
+    expect(args).toEqual(['--verbose', '--json']);
   });
 
   /**
@@ -313,14 +414,22 @@ describe('runDoctorCommand', () => {
     expect(result.failures.length).toBeGreaterThan(0);
   });
 
-  test('a zero exit with reported stdout failures is unaffected by the exit-code check', async () => {
+  test('a zero exit with reported --json failures is unaffected by the exit-code check', async () => {
     class FakeChild extends EventEmitter {
       stdout = new EventEmitter();
     }
     const child = new FakeChild();
+    const doctorJson = JSON.stringify({
+      schemaVersion: 1,
+      ok: false,
+      code: 1,
+      status: 'fail',
+      message: '1 check failed',
+      data: { failed: ['missing plugin foo'] },
+    });
     const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
       queueMicrotask(() => {
-        child.stdout.emit('data', Buffer.from('missing plugin foo\n'));
+        child.stdout.emit('data', Buffer.from(`${doctorJson}\n`));
         child.emit('close', 0);
       });
       return child;
@@ -420,7 +529,15 @@ describe('buildRealDeps().pluginManager doctorFailures wiring', () => {
   }
 
   test('invokes the configured doctor command and folds its parsed failures into verification failure', async () => {
-    const { calls } = installSpawnMock('missing plugin foo\nstale engine ref\n');
+    const doctorJson = JSON.stringify({
+      schemaVersion: 1,
+      ok: false,
+      code: 1,
+      status: 'fail',
+      message: '2 checks failed',
+      data: { failed: ['missing plugin foo', 'stale engine ref'] },
+    });
+    const { calls } = installSpawnMock(`${doctorJson}\n`);
     const { buildRealDeps } = await import('./real-deps');
     const projectRoot = await makeProjectRoot();
     try {
@@ -1718,9 +1835,17 @@ describe('buildRealDeps() — remaining port coverage', () => {
       stdout = new EventEmitter();
     }
     const child = new DoctorChild();
+    const doctorJson = JSON.stringify({
+      schemaVersion: 1,
+      ok: false,
+      code: 1,
+      status: 'fail',
+      message: '1 check failed',
+      data: { failed: ['missing plugin foo'] },
+    });
     const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
       queueMicrotask(() => {
-        child.stdout.emit('data', Buffer.from('missing plugin foo\n'));
+        child.stdout.emit('data', Buffer.from(`${doctorJson}\n`));
         child.emit('close', 0);
       });
       return child;
