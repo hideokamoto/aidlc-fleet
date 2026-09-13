@@ -61,6 +61,15 @@ export class FileOwnershipGuard {
     if (!(await this.pathExists(targetDir))) {
       return { backupPath: '' };
     }
+    // issue #30: BR2.4 ("no write ever passes through a symlink") must
+    // hold here too, not just for `checkWriteAllowed`. This method used
+    // to verify only BR2.1 (force+backup) and leave BR2.4 entirely to
+    // callers — `real-deps.ts`'s `placeEngine` had to add its own separate
+    // `checkWriteAllowed` call as a workaround (see its comment there),
+    // and every OTHER/future caller of this method silently lost that
+    // protection. Calling it here, once, means no caller has to remember
+    // to duplicate it.
+    await this.assertNoSymlinkInPath(targetDir);
     if (!options.force) {
       throw new FileOwnershipViolation(
         `refusing to replace engine-owned directory ${targetDir} without --force`,
@@ -168,7 +177,15 @@ export class FileOwnershipGuard {
         if (err instanceof FileOwnershipViolation) throw err;
         // ENOENT is expected for path segments that don't exist yet
         // (e.g. the file itself, not-yet-created directories) — only
-        // existing segments can be symlinks to check.
+        // existing segments can be symlinks to check. issue #30: any
+        // OTHER `lstat` failure (EACCES, ENOTDIR, ...) must not be
+        // silently treated as "doesn't exist yet" — that would let a
+        // write proceed past a real filesystem problem this guard was
+        // never able to actually check, breaking the fail-fast guarantee
+        // (project.md Mandated: file-ownership-invariant violations must
+        // fail fast, never warn-and-continue).
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') throw err;
       }
     }
   }
