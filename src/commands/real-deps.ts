@@ -495,6 +495,7 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);
       return { exitCode, dropsFileContent: await readDropsFile(config.projectRoot) };
     },
+    isComposeConfigured: () => config.composeCommand.length > 0,
     doctorFailures: () =>
       runDoctorCommand(config.doctorCommand, { AIDLC_PROJECT_DIR: config.projectRoot }),
     loadLockfile: async () => {

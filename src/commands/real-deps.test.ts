@@ -729,6 +729,59 @@ describe('buildRealDeps() — remaining port coverage', () => {
   });
 
   /**
+   * issue #13: with `AIDLC_FLEET_COMPOSE_CMD` unset (modeled here as the
+   * empty `composeCommand` array `cli.ts` derives from an empty resolved
+   * value), `engineInstaller.install()` used to fetch the tarball, pass
+   * `checkEngineDirectoryReplace`, and fully replace the engine-owned
+   * directory via `placeEngine` — only then reaching `runCompose`, which
+   * throws `real-deps: no compose command configured`. On a brand-new
+   * project that left a real `.claude` directory on disk from a "failed"
+   * install; re-running `init` after fixing the env var then hit an
+   * unrelated `FileOwnershipGuard` "refusing to replace engine-owned
+   * directory ... without --force" error, because `.claude` now existed.
+   * Fail fast instead: no fetch, no `checkEngineDirectoryReplace`, no
+   * write, nothing on disk changes.
+   */
+  test('issue #13: an unconfigured compose command fails fast before any engine fetch or write', async () => {
+    const tarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper-engine-ref/', typeflag: '5' },
+      { name: 'engine-wrapper-engine-ref/engine-marker.txt', typeflag: '0', content: 'engine-v1' },
+    ]);
+    const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+    const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      // Brand-new project: no `.claude` directory exists yet.
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: [], // AIDLC_FLEET_COMPOSE_CMD unset
+        doctorCommand: ['doctor-bin'],
+        engineRepo: 'awslabs/aidlc-workflows',
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          { repo: 'awslabs/aidlc-workflows', ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+          { harness: 'claude', force: false, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow(/compose/);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      await expect(readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8')).rejects.toThrow();
+      // No engine-owned directory was created at all — not even `.claude`
+      // itself, let alone any staging leftovers.
+      const entries = await readdir(projectRoot);
+      expect(entries).not.toContain('.claude');
+      expect(entries.filter((e) => e.startsWith('.staging-'))).toEqual([]);
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
    * issue #11: with no `engineRepo` override configured at all,
    * `fetchEngineTarball` must fall back to the `ChannelEngine.repo` field
    * carried by the parsed Channel itself — the whole point of the schema
