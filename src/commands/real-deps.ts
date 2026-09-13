@@ -103,7 +103,14 @@ export interface RealDepsConfig {
    * unset (or empty), `doctorFailures`/`doctorRunner.run` report no
    * failures rather than fail the command outright, matching this CLI's
    * general BR3.1 stance that a doctor invocation problem degrades the
-   * verification rather than crashing the CLI.
+   * verification rather than crashing the CLI. That graceful-degrade only
+   * covers "unset" though: once *configured*, a doctor command that does
+   * not emit the `--json` contract {@link parseDoctorOutput} requires now
+   * throws rather than degrading (see its doc comment). This repo's own
+   * built-in default (`AIDLC_FLEET_DOCTOR_CMD`'s `ENV_CONFIG_DEFAULTS`
+   * entry in `src/core/env-config-resolver.ts`) is presently in exactly
+   * that broken-but-configured state — see README.md § "既知の制約" and
+   * issue #19 (Problem 2).
    */
   doctorCommand?: string[];
   /**
@@ -307,6 +314,19 @@ async function runComposeCommand(
  * Exported so its parsing logic is independently unit testable without
  * spawning a real process (per team.md's mocked-spawn test convention for
  * this module's external-command invocations).
+ *
+ * issue #19 (Problem 2, unresolved): this repo's own vendored `.claude/
+ * tools/` engine predates the `aidlc.ts`/`aidlc-doctor.ts` generation and
+ * has no `--json`-capable doctor script of its own — `aidlc-utility.ts
+ * doctor`, the only doctor-shaped command it ships, ignores `--json`
+ * entirely and always prints the old human-readable report. Confirmed
+ * below by `real-deps.test.ts`'s "matches this repo's own vendored
+ * doctor output" test, which feeds this function that exact captured
+ * shape. Practical effect: this repo's *own* built-in
+ * `AIDLC_FLEET_DOCTOR_CMD` default currently makes every doctor
+ * invocation throw here. See README.md § "既知の制約" for the full
+ * writeup and the recommended workaround (unset `AIDLC_FLEET_DOCTOR_CMD`
+ * until the vendored engine is updated).
  */
 export function parseDoctorOutput(stdout: string): string[] {
   const trimmed = stdout.trim();

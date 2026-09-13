@@ -251,6 +251,43 @@ describe('parseDoctorOutput', () => {
     const { parseDoctorOutput } = await import('./real-deps');
     expect(() => parseDoctorOutput('1 passed, 1 warnings, 1 failed')).toThrow(/JSON/);
   });
+
+  /**
+   * issue #19 (Problem 2, unresolved): this repo's *own* built-in
+   * `AIDLC_FLEET_DOCTOR_CMD` default (`bun .claude/tools/aidlc-utility.ts
+   * doctor`, see `src/core/env-config-resolver.ts`) is not the upstream
+   * `aidlc-doctor.ts` this parser's `--json` contract was written against
+   * — this repo's vendored `.claude/tools/` engine predates the unified
+   * `aidlc.ts` CLI generation that ships `aidlc-doctor.ts`, and has no
+   * `--json`-capable doctor script at all. `aidlc-utility.ts doctor`
+   * silently ignores a `--json` flag and always emits the old
+   * human-readable report shape.
+   *
+   * This is captured verbatim (2026-09-13) from a real run against this
+   * repo's own `main`:
+   *   $ bun .claude/tools/aidlc-utility.ts doctor --json
+   * to lock in — as an explicit, documented regression rather than a
+   * silent one — that this repo's shipped default currently makes any
+   * `doctor` invocation throw via `parseDoctorOutput` rather than
+   * returning parsed failures. See README.md § "既知の制約" for the full
+   * writeup and the recommended `AIDLC_FLEET_DOCTOR_CMD=` (unset)
+   * workaround; fixing this at the root requires bumping this repo's
+   * vendored engine to a generation that ships `aidlc-doctor.ts`, which
+   * is a separate, much larger change (see the same README section for
+   * the file-count/line-count evidence) tracked in issue #19.
+   */
+  test('rejects this repo\'s own vendored aidlc-utility.ts doctor output (issue #19, Problem 2)', async () => {
+    const { parseDoctorOutput } = await import('./real-deps');
+    const vendoredDoctorOutput = [
+      'AI-DLC Health Check',
+      '─────────────────────────────────────',
+      '✓  bun installed (required for CLI tools and hooks)',
+      '✓  aidlc-write-audit-log.ts present',
+      '─────────────────────────────────────',
+      '53 passed, 0 failed',
+    ].join('\n');
+    expect(() => parseDoctorOutput(vendoredDoctorOutput)).toThrow(/JSON/);
+  });
 });
 
 describe('runDoctorCommand', () => {

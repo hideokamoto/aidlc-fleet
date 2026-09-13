@@ -42,9 +42,21 @@ export type LocalConfigValues = Partial<Record<EnvConfigKey, string>>;
  * bare `'default'` source here is never passed through to
  * `RealDepsConfig.engineRepo`, so this fallback can never shadow the
  * Channel's declared `engine.repo`.
- * `AIDLC_FLEET_COMPOSE_CMD` / `AIDLC_FLEET_DOCTOR_CMD` -> the exact
- * commands `.claude/tools/aidlc.ts`'s own route table dispatches `compose`
- * and `doctor` to for a self-hosted Claude Code install.
+ * `AIDLC_FLEET_COMPOSE_CMD` -> the exact command a self-hosted Claude Code
+ * install actually has on disk under `.claude/tools/` to run `compose`.
+ * `AIDLC_FLEET_DOCTOR_CMD` -> the *only* doctor-shaped command this repo's
+ * own vendored `.claude/tools/` currently has (`aidlc-utility.ts doctor`) —
+ * NOT upstream's newer `aidlc-doctor.ts` (this repo's vendored engine
+ * predates the unified `aidlc.ts` CLI generation that ships it, and
+ * `aidlc.ts` itself does not exist under `.claude/tools/` here). Unlike
+ * `aidlc-doctor.ts`, `aidlc-utility.ts doctor` does not understand `--json`/
+ * `--quiet` — it always emits the human-readable multi-line report. Since
+ * `runDoctorCommand` (`src/commands/real-deps.ts`) forces `--json` and
+ * requires the resulting stdout to parse as that JSON contract, invoking
+ * `doctor` validation with this default currently throws rather than
+ * succeeding. See README.md § "既知の制約" and issue #19 (Problem 2) — a
+ * real fix needs this repo's vendored engine bumped to a generation that
+ * actually ships `aidlc-doctor.ts`, which is out of scope here.
  */
 export const ENV_CONFIG_DEFAULTS: Partial<Record<EnvConfigKey, string>> = {
   AIDLC_FLEET_ENGINE_REPO: 'awslabs/aidlc-workflows',
