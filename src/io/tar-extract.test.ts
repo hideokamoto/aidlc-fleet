@@ -114,6 +114,24 @@ describe('parseTar', () => {
     const entries = parseTar(archive);
     expect(entries.map((e) => e.name)).toEqual(['a.txt', 'b.txt']);
   });
+
+  test('pax global extended header エントリ（typeflag "g"）を type: "pax-global" として検出する（issue #27）', () => {
+    const archive = buildTarArchive([
+      { name: 'pax_global_header', typeflag: 'g', content: '30 comment=abc\n' },
+    ]);
+    const entries = parseTar(archive);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.type).toBe('pax-global');
+  });
+
+  test('pax per-file extended header エントリ（typeflag "x"）を type: "pax-extended" として検出する（issue #27）', () => {
+    const archive = buildTarArchive([
+      { name: 'PaxHeaders/file.txt', typeflag: 'x', content: '30 comment=abc\n' },
+    ]);
+    const entries = parseTar(archive);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.type).toBe('pax-extended');
+  });
 });
 
 describe('assertSafeEntry — パス検証（FR4.1）', () => {
@@ -160,6 +178,17 @@ describe('stripWrapperDirectory', () => {
     const stripped = stripWrapperDirectory(entries);
     expect(stripped.map((e) => e.name)).toEqual(['dir-a/file.txt', 'dir-b/file.txt']);
   });
+
+  test('pax global extended header エントリが先頭にあっても、残りの実エントリの単一トップレベルを正しく除去する（issue #27, 実際の GitHub codeload tarball 再現）', () => {
+    const entries: TarEntry[] = [
+      { name: 'pax_global_header', type: 'pax-global', data: new Uint8Array() },
+      { name: 'repo-abcdef/', type: 'directory', data: new Uint8Array() },
+      { name: 'repo-abcdef/plugin.json', type: 'file', data: new Uint8Array() },
+      { name: 'repo-abcdef/sub/file.txt', type: 'file', data: new Uint8Array() },
+    ];
+    const stripped = stripWrapperDirectory(entries);
+    expect(stripped.map((e) => e.name)).toEqual(['plugin.json', 'sub/file.txt']);
+  });
 });
 
 /**
@@ -180,6 +209,7 @@ describe('extractTarGz（実ファイルシステム）', () => {
 
   test('正常系: ラッパーディレクトリ付き gzip tar を展開し、期待するファイルツリーが実際に存在する（FR1.1〜FR1.4）', async () => {
     const archive = buildTarArchive([
+      { name: 'pax_global_header', typeflag: 'g', content: '30 comment=abc\n' },
       { name: 'example-plugin-abc123/', typeflag: '5' },
       {
         name: 'example-plugin-abc123/claude-code-plugin/plugin.json',
