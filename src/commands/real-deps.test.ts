@@ -1218,6 +1218,84 @@ describe('buildRealDeps() — remaining port coverage', () => {
     }
   });
 
+  /**
+   * issue #30, problem 2: `regenerateSessionStartHook` called
+   * `mkdir`/`writeFile` directly, bypassing `FileOwnershipGuard` entirely
+   * — unlike every other write path in this module (`placeEngine`,
+   * `placeProjection`, `checkWriteAllowed`), a symlinked `hooks/`
+   * directory (or one of its ancestors) was written through with no
+   * BR2.4 check at all. This test replicates the same real-symlink attack
+   * shape as the `.claude/plugins/<name>` test above, but on
+   * `.claude/hooks`, and drives it through `pluginManager.add()` end to
+   * end (the real caller of `regenerateSessionStartHook`) rather than
+   * calling the port directly.
+   */
+  test('.claude/hooks がシンボリックリンクの場合、add() の regenerateSessionStartHook は FileOwnershipViolation で拒否する（issue #30）', async () => {
+    const tarballBytes = buildPluginGzipTarball([
+      { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+      { name: 'example-plugin-plugin-ref/plugin.json', typeflag: '0', content: '{}' },
+    ]);
+    const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+    const { restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await writeFile(
+        join(projectRoot, 'aidlc.lock.json'),
+        JSON.stringify({
+          schema: 1,
+          channel: 'stable',
+          channel_commit: 'abc123',
+          engine: {
+            ref: 'engine-ref',
+            version: '0.1.0',
+            sha256: 'deadbeef',
+            harness: 'claude',
+            installed_at: '2026-01-01T00:00:00.000Z',
+          },
+          engine_origin: '0.1.0',
+          plugins: [],
+          managed: [],
+          known_failures: [],
+          pin: null,
+        }),
+        'utf8',
+      );
+
+      // 攻撃/事故シナリオを再現: `.claude/hooks` そのものが、プロジェクト
+      // 外の実ディレクトリへのシンボリックリンクとして事前に存在する。
+      const outsideTarget = await mkdtemp(join(tmpdir(), 'aidlc-fleet-hooks-symlink-target-'));
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      await symlink(outsideTarget, join(projectRoot, '.claude', 'hooks'), 'dir');
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+        doctorCommand: ['doctor-bin'],
+      });
+
+      await expect(
+        deps.pluginManager.add({
+          name: 'example-plugin',
+          repo: 'org/example-plugin',
+          ref: 'plugin-ref',
+          version: '1.0.0',
+          sha256,
+        }),
+      ).rejects.toThrow(/symlink/);
+
+      // シンボリックリンクの向こう側には session-start.sh が書き込まれて
+      // いない。
+      const outsideEntries = await readdir(outsideTarget);
+      expect(outsideEntries).toEqual([]);
+      await rm(outsideTarget, { recursive: true, force: true });
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   test('lockfileStore.loadClassified() reports "absent" when no Lockfile exists', async () => {
     const projectRoot = await makeEmptyProjectRoot();
     try {

@@ -62,6 +62,37 @@ describe('FileOwnershipGuard (real filesystem)', () => {
     expect(entries).toEqual([]);
   });
 
+  /**
+   * issue #30: `checkEngineDirectoryReplace` verified BR2.1 (force+backup)
+   * but never called `assertNoSymlinkInPath` itself — every caller (and
+   * any future caller) had to remember to layer BR2.4 on top separately
+   * (as `real-deps.ts`'s `placeEngine` was forced to work around in PR
+   * #26). This integration test creates a REAL symlinked ancestor
+   * directory and confirms the guard now refuses to replace an
+   * engine-owned directory reached through it, and that no backup is
+   * written through the symlink.
+   */
+  test('BR2.4 (via checkEngineDirectoryReplace): replacing an engine directory reached through a symlinked ancestor is refused, even with --force', async () => {
+    const realOutside = join(root, 'real-outside');
+    await mkdir(join(realOutside, '.claude'), { recursive: true });
+    await writeFile(join(realOutside, '.claude', 'marker.txt'), 'original', 'utf8');
+    const linkedParent = join(root, 'linked-parent');
+    await symlink(realOutside, linkedParent, 'dir');
+    const engineDir = join(linkedParent, '.claude');
+
+    const guard = new FileOwnershipGuard({ projectRoot: root });
+    await expect(guard.checkEngineDirectoryReplace(engineDir, { force: true })).rejects.toThrow(
+      FileOwnershipViolation,
+    );
+
+    // No backup was created through the symlink — the real directory
+    // behind it is untouched beyond the marker file we seeded.
+    const entries = await readdir(join(realOutside, '.claude'));
+    expect(entries).toEqual(['marker.txt']);
+    const outsideEntries = await readdir(realOutside);
+    expect(outsideEntries).toEqual(['.claude']);
+  });
+
   test('BR2.3: a write under aidlc/ (other than the seed copy) is refused', async () => {
     const aidlcPath = join(root, 'aidlc', 'spaces', 'default', 'intents.json');
     await mkdir(join(root, 'aidlc', 'spaces', 'default'), { recursive: true });

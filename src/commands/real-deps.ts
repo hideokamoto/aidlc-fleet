@@ -28,7 +28,11 @@ import { LocalConfigStore } from '../io/local-config-store';
 import { VersionGate } from '../core/version-gate';
 import { SuccessVerifier } from '../core/success-verifier';
 import { DriftDetector } from '../core/drift-detector';
-import { FileOwnershipGuard, FileOwnershipViolation } from '../core/file-ownership-guard';
+import {
+  FileOwnershipGuard,
+  FileOwnershipViolation,
+  ensureDirectory,
+} from '../core/file-ownership-guard';
 import { ENV_CONFIG_KEYS, resolveEnvConfig } from '../core/env-config-resolver';
 import { EngineInstaller } from '../orchestration/engine-installer';
 import { PluginManager } from '../orchestration/plugin-manager';
@@ -598,7 +602,16 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const harnessRoot = await resolveConfiguredHarnessRoot();
       const hooksDir = join(config.projectRoot, harnessRoot, 'hooks');
       const hookPath = join(hooksDir, 'session-start.sh');
-      await mkdir(hooksDir, { recursive: true });
+      // issue #30: this used to call `mkdir`/`writeFile` directly,
+      // bypassing `FileOwnershipGuard` entirely — a symlinked `hooks/`
+      // directory (or one of its ancestors) would have been written
+      // through without any BR2.4 check, unlike every other write path
+      // in this module. `ensureDirectory` runs `checkWriteAllowed` before
+      // creating `hooksDir`; `checkWriteAllowed` on `hookPath` itself
+      // re-verifies the file's own path (a symlinked `session-start.sh`
+      // left over from a prior install) right before the write.
+      await ensureDirectory(guard, hooksDir);
+      await guard.checkWriteAllowed(hookPath, { isInitialSeedCopy: false });
       const body = pluginNames.map((name) => `# BEGIN ${name}\n# END ${name}`).join('\n');
       await writeFile(hookPath, `#!/bin/sh\n${body}\n`, 'utf8');
     },
