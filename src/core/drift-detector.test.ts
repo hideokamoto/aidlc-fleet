@@ -7,7 +7,7 @@ function makeChannel(overrides: Partial<Channel> = {}): Channel {
   return {
     schema: 1,
     channel: 'stable',
-    engine: { ref: 'lockfile-ref', version: '0.2.0', sha256: 'x' },
+    engine: { repo: 'org/engine', ref: 'lockfile-ref', version: '0.2.0', sha256: 'x' },
     migration_boundaries: [],
     plugins: [{ name: 'p1', repo: 'org/p1', ref: 'p1-ref', version: '1.0.0', sha256: 'y' }],
     ...overrides,
@@ -58,7 +58,7 @@ describe('DriftDetector', () => {
   test('BR5.2: lockfile/disk agree but channel has moved ahead -> exit code 1 (behind channel)', () => {
     const detector = new DriftDetector();
     const channel = makeChannel({
-      engine: { ref: 'newer-channel-ref', version: '0.3.0', sha256: 'x' },
+      engine: { repo: 'org/engine', ref: 'newer-channel-ref', version: '0.3.0', sha256: 'x' },
     });
     const result = detector.compare(makeLockfile(), channel, {
       installedEngineRef: 'lockfile-ref',
@@ -91,7 +91,7 @@ describe('DriftDetector', () => {
   test('BR5.3: when pin is set, the pinned ref substitutes for the channel latest in comparison', () => {
     const detector = new DriftDetector();
     const channel = makeChannel({
-      engine: { ref: 'channel-latest-ref', version: '0.9.0', sha256: 'x' },
+      engine: { repo: 'org/engine', ref: 'channel-latest-ref', version: '0.9.0', sha256: 'x' },
     });
     const lockfile = makeLockfile({ pin: 'lockfile-ref' }); // pinned to what's already installed
     const result = detector.compare(lockfile, channel, {

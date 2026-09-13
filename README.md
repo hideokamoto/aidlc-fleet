@@ -75,17 +75,23 @@ bun bin/aidlc-fleet.ts --help
 参照する。優先順位は **環境変数 > プロジェクトローカルの `.aidlc-fleet.local.json`
 (gitignore対象) > 組み込みデフォルト値 > 未設定** の順(issue #18)。
 
-| 変数                      | 用途                                  | デフォルト値                                          |
-| ------------------------- | ------------------------------------- | ----------------------------------------------------- |
-| `AIDLC_FLEET_CHANNEL_URL` | Channel宣言のURL(必須)                | なし — チーム固有の配信URLのため                      |
-| `AIDLC_FLEET_ENGINE_REPO` | エンジンtarball取得元の `owner/name`  | `awslabs/aidlc-workflows`                             |
-| `AIDLC_FLEET_COMPOSE_CMD` | upstream compose コマンド(空白区切り) | `bun .claude/tools/aidlc-orchestrate.ts next compose` |
-| `AIDLC_FLEET_DOCTOR_CMD`  | upstream doctor コマンド(空白区切り)  | `bun .claude/tools/aidlc-utility.ts doctor`           |
+| 変数                      | 用途                                                    | デフォルト値                                          |
+| ------------------------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| `AIDLC_FLEET_CHANNEL_URL` | Channel宣言のURL(必須)                                  | なし — チーム固有の配信URLのため                      |
+| `AIDLC_FLEET_ENGINE_REPO` | エンジンtarball取得元 `owner/name` の**上書き**(任意・issue #11) | なし — 通常はChannel自身の `engine.repo` を使う       |
+| `AIDLC_FLEET_COMPOSE_CMD` | upstream compose コマンド(空白区切り)                   | `bun .claude/tools/aidlc-orchestrate.ts next compose` |
+| `AIDLC_FLEET_DOCTOR_CMD`  | upstream doctor コマンド(空白区切り)                    | `bun .claude/tools/aidlc-utility.ts doctor`           |
 
-3つのデフォルト値は、このリポジトリのようなセルフホスト型 Claude Code インス
-トールで通常そのまま正しい値になる(`.claude/tools/aidlc.ts` のルーティング表
-が実際に `compose`/`doctor` をディスパッチする先と同一)。`AIDLC_FLEET_CHANNEL_URL`
-だけはチーム固有の配信URLのため、デフォルトを持たない。
+`AIDLC_FLEET_COMPOSE_CMD`/`AIDLC_FLEET_DOCTOR_CMD` のデフォルト値は、このリポジ
+トリのようなセルフホスト型 Claude Code インストールで通常そのまま正しい値にな
+る(`.claude/tools/aidlc.ts` のルーティング表が実際に `compose`/`doctor` をディ
+スパッチする先と同一)。`AIDLC_FLEET_CHANNEL_URL` はチーム固有の配信URLのため、
+デフォルトを持たない。`AIDLC_FLEET_ENGINE_REPO` はエンジンの取得元をChannel宣
+言ファイル1つに集約するための設計(issue #11: `ChannelEngine.repo` — `ChannelPlugin.repo`
+と同じ形)により、通常は**設定不要**――フリートオペレータがエンジンをフォーク/
+ミラー先へ移す際もChannelファイル1つを更新するだけで全プロジェクトが追従する。
+この環境変数は、Channelがまだ更新されていないフォークを一時的に試す等の例外的
+なプロジェクト単位の上書きにのみ使う。
 
 未設定の変数(通常は `AIDLC_FLEET_CHANNEL_URL` のみ)は、毎回シェルにexportし
 直す代わりに一度だけ答えて保存できる:

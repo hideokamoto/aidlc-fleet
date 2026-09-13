@@ -7,6 +7,7 @@ test('parseChannel accepts a well-formed channel and returns typed fields', () =
   expect(channel.schema).toBe(1);
   expect(channel.channel).toBe('stable');
   expect(channel.engine.ref).toBe('e1e1e1e1e1e1');
+  expect(channel.engine.repo).toBe('awslabs/aidlc-workflows');
   expect(channel.migration_boundaries).toHaveLength(1);
   expect(channel.migration_boundaries[0]?.action).toBe('manual');
 });
@@ -56,6 +57,15 @@ test('parseChannel defaults missing migration_boundaries/plugins to empty arrays
   const channel = parseChannel(JSON.stringify(minimal));
   expect(channel.migration_boundaries).toEqual([]);
   expect(channel.plugins).toEqual([]);
+});
+
+test('parseChannel throws ChannelParseError when engine.repo is missing (issue #11: repo is required, matching ChannelPlugin.repo)', () => {
+  const broken = {
+    ...validFixture,
+    engine: { ...validFixture.engine, repo: undefined },
+  } as Record<string, unknown>;
+  delete (broken.engine as Record<string, unknown>).repo;
+  expect(() => parseChannel(JSON.stringify(broken))).toThrow(ChannelParseError);
 });
 
 test('parseChannel ignores unrecognized additive fields', () => {

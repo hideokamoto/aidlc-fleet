@@ -43,6 +43,8 @@ export class ChannelSchemaError extends ChannelParseError {
 }
 
 export interface ChannelEngine {
+  /** `owner/name` GitHub repo the engine tarball is fetched from (matches `ChannelPlugin.repo` — issue #11). */
+  repo: string;
   /** Commit SHA — tags mostly absent in upstream releases. */
   ref: string;
   version: string;
@@ -93,6 +95,7 @@ function parseEngine(raw: unknown): ChannelEngine {
     );
   }
   return {
+    repo: requireField(ENTITY_NAME, raw, 'repo', isString, ChannelParseError),
     ref: requireField(ENTITY_NAME, raw, 'ref', isString, ChannelParseError),
     version: requireField(ENTITY_NAME, raw, 'version', isString, ChannelParseError),
     tag: tag ?? null,

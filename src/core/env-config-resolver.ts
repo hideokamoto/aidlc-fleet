@@ -35,7 +35,13 @@ export type LocalConfigValues = Partial<Record<EnvConfigKey, string>>;
 /**
  * `AIDLC_FLEET_ENGINE_REPO` -> the canonical upstream engine repo this
  * project's own `project.md` Forbidden rule already names ("NEVER
- * upstream（`awslabs/aidlc-workflows`）のファイルを変更しない").
+ * upstream（`awslabs/aidlc-workflows`）のファイルを変更しない"). issue #11:
+ * this is display/prompt cosmetics only now — since `ChannelEngine` carries
+ * its own `repo` field, `cli.ts` only treats this variable as an actual
+ * override when its resolved `source` is `'env'` or `'local-config'`; a
+ * bare `'default'` source here is never passed through to
+ * `RealDepsConfig.engineRepo`, so this fallback can never shadow the
+ * Channel's declared `engine.repo`.
  * `AIDLC_FLEET_COMPOSE_CMD` / `AIDLC_FLEET_DOCTOR_CMD` -> the exact
  * commands `.claude/tools/aidlc.ts`'s own route table dispatches `compose`
  * and `doctor` to for a self-hosted Claude Code install.

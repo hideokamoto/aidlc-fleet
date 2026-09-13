@@ -26,7 +26,7 @@ export function makeChannel(overrides: Partial<Channel> = {}): Channel {
   return {
     schema: 1,
     channel: 'stable',
-    engine: { ref: 'e1', version: '0.1.0', sha256: 'x' },
+    engine: { repo: 'org/engine', ref: 'e1', version: '0.1.0', sha256: 'x' },
     migration_boundaries: [],
     plugins: [],
     ...overrides,

@@ -533,7 +533,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
       });
 
       const result = await deps.engineInstaller.install(
-        { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+        { repo: 'awslabs/aidlc-workflows', ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
         { harness: 'claude', force: true, isFirstInit: true, adopt: false },
       );
 
@@ -555,6 +555,81 @@ describe('buildRealDeps() — remaining port coverage', () => {
         'utf8',
       );
       expect(JSON.parse(installedStateRaw).engineRef).toBe('engine-ref');
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * issue #11: with no `engineRepo` override configured at all,
+   * `fetchEngineTarball` must fall back to the `ChannelEngine.repo` field
+   * carried by the parsed Channel itself — the whole point of the schema
+   * change (a fleet operator moving the engine to a fork only has to edit
+   * the one central Channel file, no per-project env var).
+   */
+  test('engineInstaller.install() falls back to the Channel-declared engine.repo when no AIDLC_FLEET_ENGINE_REPO override is configured', async () => {
+    const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+    const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+    const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+        doctorCommand: ['doctor-bin'],
+        // no engineRepo override configured
+      });
+
+      const result = await deps.engineInstaller.install(
+        { repo: 'some-fork/aidlc-workflows', ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+        { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+      );
+
+      expect(result.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://codeload.github.com/some-fork/aidlc-workflows/tar.gz/engine-ref',
+      );
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * issue #11: when an `engineRepo` override IS configured, it takes
+   * precedence over the Channel's declared `engine.repo` — the override
+   * exists precisely for the exceptional per-project case (e.g. trying a
+   * fork before the Channel is updated to point at it).
+   */
+  test('engineInstaller.install() prefers the AIDLC_FLEET_ENGINE_REPO override over the Channel-declared engine.repo when both are present', async () => {
+    const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+    const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
+    const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+        doctorCommand: ['doctor-bin'],
+        engineRepo: 'override-owner/override-repo',
+      });
+
+      const result = await deps.engineInstaller.install(
+        { repo: 'channel-owner/channel-repo', ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+        { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+      );
+
+      expect(result.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://codeload.github.com/override-owner/override-repo/tar.gz/engine-ref',
+      );
     } finally {
       restoreFetch();
       await rm(projectRoot, { recursive: true, force: true });
@@ -1143,7 +1218,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
         });
 
         const result = await deps.engineInstaller.install(
-          { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+          { repo: 'awslabs/aidlc-workflows', ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
           { harness: 'cursor', force: true, isFirstInit: true, adopt: false },
         );
 
@@ -1300,7 +1375,7 @@ describe('buildRealDeps() — remaining port coverage', () => {
 
         await expect(
           deps.engineInstaller.install(
-            { ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+            { repo: 'awslabs/aidlc-workflows', ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
             { harness: 'bogus-harness', force: true, isFirstInit: true, adopt: false },
           ),
         ).rejects.toThrow(/bogus-harness/);

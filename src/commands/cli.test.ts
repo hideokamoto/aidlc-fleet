@@ -185,7 +185,7 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     const channelJson = {
       schema: 1,
       channel: 'test-channel',
-      engine: { ref: 'engine-ref', version: '1.0.0', sha256: engineSha256 },
+      engine: { repo: engineRepo, ref: 'engine-ref', version: '1.0.0', sha256: engineSha256 },
       migration_boundaries: [],
       plugins: [
         {
@@ -250,6 +250,18 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
     expect(readlineState.calls).toEqual([]);
     const lockfile = JSON.parse(await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8'));
     expect(lockfile.engine.harness).toBe('claude');
+    expect(lockfile.engine.ref).toBe('engine-ref');
+  });
+
+  test('"init" with AIDLC_FLEET_ENGINE_REPO unset fetches the engine from the Channel-declared engine.repo (issue #11)', async () => {
+    const { runCli } = await import('./cli');
+    await setUp();
+    delete process.env.AIDLC_FLEET_ENGINE_REPO;
+
+    const exitCode = await runCli(['init', '--harness', 'claude'], projectRoot);
+
+    expect(exitCode).toBe(0);
+    const lockfile = JSON.parse(await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8'));
     expect(lockfile.engine.ref).toBe('engine-ref');
   });
 

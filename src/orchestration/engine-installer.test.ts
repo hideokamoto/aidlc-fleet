@@ -26,6 +26,7 @@ function makeLockfile(overrides: Partial<Lockfile> = {}): Lockfile {
 }
 
 const channelEngine: ChannelEngine = {
+  repo: 'org/engine',
   ref: 'new-ref',
   version: '0.2.0',
   tag: null,
