@@ -76,6 +76,40 @@ function crossesBoundary(
   );
 }
 
+/**
+ * Severity ranking for `MigrationBoundary.action`, most restrictive first.
+ * Used by {@link mostSevereCrossedBoundary} to resolve a single boundary
+ * out of every boundary a transition crosses, independent of the order
+ * they happen to be declared in `channel.migration_boundaries` (#29).
+ */
+const ACTION_SEVERITY: Record<MigrationBoundary['action'], number> = {
+  reject: 2,
+  manual: 1,
+  none: 0,
+};
+
+/**
+ * Among every boundary a `fromVersion -> toVersion` transition crosses,
+ * return the single most severe one (`reject` > `manual` > `none`).
+ * `channel.migration_boundaries` is not guaranteed to be sorted by
+ * severity or by `before`, so this evaluates every entry rather than
+ * stopping at the first match — see #29.
+ */
+function mostSevereCrossedBoundary(
+  fromVersion: string,
+  toVersion: string,
+  boundaries: MigrationBoundary[],
+): MigrationBoundary | undefined {
+  let most: MigrationBoundary | undefined;
+  for (const boundary of boundaries) {
+    if (!crossesBoundary(fromVersion, toVersion, boundary)) continue;
+    if (!most || ACTION_SEVERITY[boundary.action] > ACTION_SEVERITY[most.action]) {
+      most = boundary;
+    }
+  }
+  return most;
+}
+
 export class VersionGate {
   /**
    * Classify a version transition. Never throws — see
@@ -119,8 +153,15 @@ export class VersionGate {
     // invariant: lockfile.engine_origin is always non-empty here — see
     // the BR1.5 doc comment above for why no reachable input violates it.
 
-    const crossed = channel.migration_boundaries.find((boundary) =>
-      crossesBoundary(lockfile.engine.version, targetVersion, boundary),
+    // Evaluate every crossed boundary and keep the most severe one
+    // (reject > manual > none) rather than the first declared — a
+    // channel's `migration_boundaries` array is not guaranteed to be
+    // sorted by severity, so `.find()` here would silently honor
+    // whichever boundary happens to be declared first (#29).
+    const crossed = mostSevereCrossedBoundary(
+      lockfile.engine.version,
+      targetVersion,
+      channel.migration_boundaries,
     );
 
     if (!crossed || crossed.action === 'none') {
