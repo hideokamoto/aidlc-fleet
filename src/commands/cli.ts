@@ -121,7 +121,22 @@ export async function runCli(argv: string[], projectRoot: string): Promise<numbe
       // that is a much stronger signal than a hardcoded default. Otherwise
       // ask the human which harness this project uses, rather than picking
       // one for them.
-      let harness = readOption(rest, 'harness');
+      // issue #31: readOption throws when `--harness` is present but the
+      // following token is itself another flag (e.g. `--harness --force`)
+      // instead of silently taking "--force" as the harness value. The
+      // command layer's job is argv parsing and exit-code decisions only,
+      // so it catches that here and reports it the same way as every other
+      // parsing failure below (stderr message, exit code 1) rather than
+      // letting it escape as an uncaught exception.
+      let harness: string | undefined;
+      try {
+        harness = readOption(rest, 'harness');
+      } catch (err) {
+        process.stderr.write(
+          `aidlc-fleet: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        return 1;
+      }
       if (harness === undefined) {
         const detected = await deps.harnessDetector.detectDefault();
         if (detected !== undefined) {
