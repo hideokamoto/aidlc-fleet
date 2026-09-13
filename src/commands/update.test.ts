@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'bun:test';
 import { runUpdate } from './update';
-import { makeFakeDeps, makeChannel } from './__fixtures__/test-deps';
+import { makeFakeDeps, makeChannel, makeLockfile } from './__fixtures__/test-deps';
 import { EngineInstaller } from '../orchestration/engine-installer';
 import type { EngineInstallerPorts } from '../orchestration/engine-installer';
 import type { ChannelEngine } from '../types/channel';
@@ -68,6 +68,125 @@ describe('runUpdate (CommandLayer)', () => {
     const { deps } = makeFakeDeps({ lockfileState: 'absent' });
     const result = await runUpdate({ acknowledgeMigration: false }, deps);
     expect(result.exitCode).toBe(1);
+  });
+
+  describe('issue #28: update respects Lockfile.pin', () => {
+    test('pin equal to the currently-installed ref keeps the install pinned instead of jumping to the channel latest', async () => {
+      const { deps } = makeFakeDeps({
+        lockfile: makeLockfile({
+          engine: { ref: 'e1', version: '0.1.0', sha256: 'sha-e1', harness: 'claude-code', installed_at: 't' },
+          pin: 'e1',
+        }),
+        channel: makeChannel({
+          engine: { repo: 'org/engine', ref: 'e2', version: '0.5.0', sha256: 'sha-e2' },
+        }),
+      });
+      let installedEngine: unknown;
+      deps.engineInstaller.install = async (engine) => {
+        installedEngine = engine;
+        return {
+          success: true,
+          compose: { exitCode: 0, dropsFileContent: 'ok\n' },
+          doctorConfigured: true,
+        };
+      };
+
+      const result = await runUpdate({ acknowledgeMigration: false }, deps);
+
+      expect(result.exitCode).toBe(0);
+      expect(installedEngine).toMatchObject({ ref: 'e1', version: '0.1.0', sha256: 'sha-e1' });
+    });
+
+    test('pin equal to the currently-installed ref never crosses a migration boundary set for the channel latest', async () => {
+      const { deps } = makeFakeDeps({
+        lockfile: makeLockfile({
+          engine: { ref: 'e1', version: '0.1.0', sha256: 'sha-e1', harness: 'claude-code', installed_at: 't' },
+          pin: 'e1',
+        }),
+        channel: makeChannel({
+          engine: { repo: 'org/engine', ref: 'e2', version: '0.5.0', sha256: 'sha-e2' },
+          // Would reject a real jump from 0.1.0 -> 0.5.0, but the pin means
+          // we never actually attempt that jump.
+          migration_boundaries: [{ before: '0.5.0', action: 'reject' }],
+        }),
+      });
+
+      const result = await runUpdate({ acknowledgeMigration: false }, deps);
+
+      expect(result.exitCode).toBe(0);
+    });
+
+    test('pin equal to the channel-declared latest ref installs that ref (gate evaluated against its real version)', async () => {
+      const { deps } = makeFakeDeps({
+        lockfile: makeLockfile({
+          engine: { ref: 'e1', version: '0.1.0', sha256: 'sha-e1', harness: 'claude-code', installed_at: 't' },
+          pin: 'e2',
+        }),
+        channel: makeChannel({
+          engine: { repo: 'org/engine', ref: 'e2', version: '0.5.0', sha256: 'sha-e2' },
+          migration_boundaries: [{ before: '0.5.0', action: 'reject' }],
+        }),
+      });
+
+      const result = await runUpdate({ acknowledgeMigration: false }, deps);
+
+      // Pin resolves to the channel's declared engine (0.5.0), which does
+      // cross the reject boundary — the gate must still catch this even
+      // though a pin is set (BR1.4/M3 safety must not be bypassed by pin).
+      expect(result.exitCode).toBe(3);
+    });
+
+    test('pin equal to the channel-declared latest ref installs that engine when the gate allows it', async () => {
+      const { deps } = makeFakeDeps({
+        lockfile: makeLockfile({
+          engine: { ref: 'e1', version: '0.1.0', sha256: 'sha-e1', harness: 'claude-code', installed_at: 't' },
+          pin: 'e2',
+        }),
+        channel: makeChannel({
+          engine: { repo: 'org/engine', ref: 'e2', version: '0.2.0', sha256: 'sha-e2' },
+        }),
+      });
+      let installedEngine: unknown;
+      deps.engineInstaller.install = async (engine) => {
+        installedEngine = engine;
+        return {
+          success: true,
+          compose: { exitCode: 0, dropsFileContent: 'ok\n' },
+          doctorConfigured: true,
+        };
+      };
+
+      const result = await runUpdate({ acknowledgeMigration: false }, deps);
+
+      expect(result.exitCode).toBe(0);
+      expect(installedEngine).toMatchObject({ ref: 'e2', version: '0.2.0', sha256: 'sha-e2' });
+    });
+
+    test('pin that matches neither the installed ref nor the channel latest is rejected rather than silently installing channel latest', async () => {
+      const { deps } = makeFakeDeps({
+        lockfile: makeLockfile({
+          engine: { ref: 'e1', version: '0.1.0', sha256: 'sha-e1', harness: 'claude-code', installed_at: 't' },
+          pin: 'unknown-ref',
+        }),
+        channel: makeChannel({
+          engine: { repo: 'org/engine', ref: 'e2', version: '0.5.0', sha256: 'sha-e2' },
+        }),
+      });
+      let installCalled = false;
+      deps.engineInstaller.install = async () => {
+        installCalled = true;
+        return {
+          success: true,
+          compose: { exitCode: 0, dropsFileContent: 'ok\n' },
+          doctorConfigured: true,
+        };
+      };
+
+      const result = await runUpdate({ acknowledgeMigration: false }, deps);
+
+      expect(installCalled).toBe(false);
+      expect(result.exitCode).not.toBe(0);
+    });
   });
 
   describe('BR1.5 (structural, see version-gate.ts doc comment)', () => {
