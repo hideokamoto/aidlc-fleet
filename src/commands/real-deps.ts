@@ -288,22 +288,48 @@ async function runComposeCommand(
 }
 
 /**
- * Parse upstream `doctor`'s stdout into the `string[]` of failure lines
- * the `doctorFailures`/`doctorRunner.run` port contract expects (BR3.1,
- * `SuccessVerifier`'s third predicate). No approved artifact specifies
- * upstream `doctor`'s output format, so this Code Generation
- * implementation choice treats each non-blank, non-comment line of
- * stdout as one reported failure — mirroring how `.drops`/other
- * upstream-produced text files are already read line-oriented elsewhere
- * in this module. Exported so its parsing logic is independently unit
- * testable without spawning a real process (per team.md's mocked-spawn
- * test convention for this module's external-command invocations).
+ * Parse upstream `doctor --json`'s stdout into the `string[]` of failure
+ * messages the `doctorFailures`/`doctorRunner.run` port contract expects
+ * (BR3.1, `SuccessVerifier`'s third predicate).
+ *
+ * issue #19 (Problem 1): this used to treat each non-blank, non-`#` line
+ * of stdout as one reported failure, but upstream's real `aidlc-doctor.ts`
+ * never produces that shape — its default mode is a human-readable
+ * multi-line report (including passing items, which this old parser would
+ * have miscounted as failures), `--quiet` is a single summary line ("N
+ * passed, N warnings, N failed"), and `--json` is the one machine-readable
+ * mode: a single-line `{schemaVersion, ok, code, status, message, data}`
+ * blob. `runDoctorCommand` now always forces `--json`, so this parser's
+ * contract is "stdout is that JSON blob" — it extracts `data.failed`.
+ * Legacy line-oriented output is explicitly rejected (throws) rather than
+ * silently misparsed, so a misconfigured (non-`--json`-supporting) doctor
+ * command surfaces as an invocation problem instead of a garbled result.
+ * Exported so its parsing logic is independently unit testable without
+ * spawning a real process (per team.md's mocked-spawn test convention for
+ * this module's external-command invocations).
  */
 export function parseDoctorOutput(stdout: string): string[] {
-  return stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('#'));
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (cause) {
+    throw new Error(
+      `real-deps: doctor output is not valid JSON (expected \`--json\` output): ${trimmed.slice(0, 200)}`,
+      { cause },
+    );
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('real-deps: doctor --json output was not a JSON object');
+  }
+  const data = (parsed as { data?: unknown }).data;
+  if (typeof data !== 'object' || data === null) {
+    return [];
+  }
+  const failed = (data as { failed?: unknown }).failed;
+  if (!Array.isArray(failed)) return [];
+  return failed.filter((entry): entry is string => typeof entry === 'string');
 }
 
 export async function runDoctorCommand(
@@ -320,9 +346,13 @@ export async function runDoctorCommand(
     // collapsing into the same `{ failures: [] }` shape.
     return { failures: [], configured: false };
   }
+  // issue #19 (Problem 1): force `--json` so upstream `doctor` emits the
+  // one machine-readable shape `parseDoctorOutput` understands, instead of
+  // its human-readable default. Never duplicated if already configured.
+  const invokedArgs = args.includes('--json') ? args : [...args, '--json'];
   const { stdout, exitCode } = await new Promise<{ stdout: string; exitCode: number }>(
     (resolve, reject) => {
-      const child = spawn(cmd, args, {
+      const child = spawn(cmd, invokedArgs, {
         env: { ...process.env, ...env },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -342,7 +372,7 @@ export async function runDoctorCommand(
   // this command actually run by default now, so a broken default (or a
   // broken override) must be surfaced rather than silently swallowed.
   if (exitCode !== 0 && failures.length === 0) {
-    failures.push(`doctor command "${doctorCommand?.join(' ')}" exited with code ${exitCode}`);
+    failures.push(`doctor command "${[cmd, ...invokedArgs].join(' ')}" exited with code ${exitCode}`);
   }
   return { failures, configured: true };
 }
