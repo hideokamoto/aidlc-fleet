@@ -150,6 +150,21 @@ describe('EngineInstaller.install (init)', () => {
     expect(calls.checkEngineDirectoryReplace).toEqual([{ force: true, harness: 'cursor' }]);
   });
 
+  test('issue #16: sets the Lockfile channel from the fetched Channel, not previous', async () => {
+    const { ports, calls } = makePorts({
+      loadLockfile: async () => makeLockfile({ channel: 'old-channel' }),
+    });
+    const installer = new EngineInstaller(ports);
+    await installer.install(channelEngine, {
+      harness: 'claude-code',
+      force: true,
+      isFirstInit: false,
+      channelName: 'stable',
+    });
+    const saved = assertDefined(calls.saveLockfile[0]);
+    expect(saved.channel).toBe('stable');
+  });
+
   test('--adopt records the adoption marker consumed by BR1.5', async () => {
     const { ports, calls } = makePorts();
     const installer = new EngineInstaller(ports);

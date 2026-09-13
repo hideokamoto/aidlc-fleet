@@ -94,6 +94,7 @@ export async function runUpdate(options: UpdateOptions, deps: CommandDeps): Prom
     harness: lockfile.engine.harness,
     force: true,
     isFirstInit: false,
+    channelName: channel.channel,
   });
 
   if (result.success) {
