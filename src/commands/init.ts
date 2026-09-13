@@ -20,6 +20,7 @@ export async function runInit(options: InitOptions, deps: CommandDeps): Promise<
     force: options.force,
     isFirstInit: true,
     adopt: options.adopt,
+    channelName: channel.channel,
   });
 
   if (result.success) {

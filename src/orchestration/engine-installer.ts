@@ -57,6 +57,8 @@ export interface EngineInstallOptions {
   isFirstInit: boolean;
   /** `init --adopt`: records the adoption marker BR1.5 later consumes. */
   adopt?: boolean;
+  /** The fetched Channel's `channel` name (issue #16), recorded onto the Lockfile the same way `engine` is. */
+  channelName?: string;
 }
 
 export interface EngineInstallResult {
@@ -124,7 +126,7 @@ export class EngineInstaller {
 
     const nextLockfile: Lockfile = {
       schema: previous?.schema ?? 1,
-      channel: previous?.channel ?? '',
+      channel: options.channelName ?? previous?.channel ?? '',
       channel_commit: previous?.channel_commit ?? '',
       engine: {
         ref: engine.ref,
