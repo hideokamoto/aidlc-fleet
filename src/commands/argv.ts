@@ -10,13 +10,24 @@ export function hasFlag(args: string[], name: string): boolean {
   return args.includes(`--${name}`);
 }
 
-/** Read `--name value` or `--name=value` from `args`, or `undefined` if absent. */
+/**
+ * Read `--name value` or `--name=value` from `args`, or `undefined` if
+ * absent. Throws `Error('missing value for --<name>')` when `--name` is
+ * present but the following token is itself another flag (starts with
+ * `--`) or there is no following token at all — mirrors the "don't
+ * consume a following flag as a value" check `positionals()` already
+ * implements below (issue #31).
+ */
 export function readOption(args: string[], name: string): string | undefined {
   const withEquals = args.find((arg) => arg.startsWith(`--${name}=`));
   if (withEquals) return withEquals.slice(name.length + 3);
   const index = args.indexOf(`--${name}`);
   if (index === -1) return undefined;
-  return args[index + 1];
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith('--')) {
+    throw new Error(`missing value for --${name}`);
+  }
+  return value;
 }
 
 /** Positional (non-flag) arguments, in order — everything not starting with `--` and not consumed as an option value is left to the caller to slice manually for simple single-positional commands. */

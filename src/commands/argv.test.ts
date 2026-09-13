@@ -19,6 +19,18 @@ describe('argv helpers', () => {
     expect(readOption(['init'], 'harness')).toBeUndefined();
   });
 
+  test('readOption throws when the following token is itself a flag (issue #31)', () => {
+    expect(() => readOption(['init', '--harness', '--force'], 'harness')).toThrow(
+      'missing value for --harness',
+    );
+  });
+
+  test('readOption throws when --name is the last token with no following value', () => {
+    expect(() => readOption(['init', '--harness'], 'harness')).toThrow(
+      'missing value for --harness',
+    );
+  });
+
   test('positionals extracts non-flag arguments, skipping option values', () => {
     expect(positionals(['plugin', 'add', 'sample-plugin', '--force'])).toEqual([
       'plugin',
