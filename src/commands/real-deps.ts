@@ -16,9 +16,9 @@
  * `.drops` file location `SuccessVerifier` scans) — each is called out
  * inline and in `code-summary.md`.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { ChannelClient } from '../io/channel-client';
@@ -28,11 +28,12 @@ import { LocalConfigStore } from '../io/local-config-store';
 import { VersionGate } from '../core/version-gate';
 import { SuccessVerifier } from '../core/success-verifier';
 import { DriftDetector } from '../core/drift-detector';
-import { FileOwnershipGuard } from '../core/file-ownership-guard';
+import { FileOwnershipGuard, FileOwnershipViolation } from '../core/file-ownership-guard';
 import { ENV_CONFIG_KEYS, resolveEnvConfig } from '../core/env-config-resolver';
 import { EngineInstaller } from '../orchestration/engine-installer';
 import { PluginManager } from '../orchestration/plugin-manager';
 import type { CommandDeps, ConfigAccess } from './types';
+import type { Lockfile } from '../types/lockfile';
 import pluginTargets from '../../.claude/tools/data/plugin-targets.json';
 
 type PluginTargetEntry = { harnessLeaf: string };
@@ -109,12 +110,133 @@ export interface RealDepsConfig {
   engineRepo?: string;
 }
 
-const INSTALLED_STATE_FILE = '.aidlc-fleet-installed.json';
 const DROPS_FILE = '.aidlc-fleet.drops';
 
-interface InstalledStateFile {
-  engineRef: string;
-  pluginRefs: Record<string, string>;
+/**
+ * B: tool-owned bookkeeping directory for post-extraction "installed"
+ * markers — one per engine/plugin target, keyed by `engine-<harness>` /
+ * `plugin-<name>`. Deliberately outside every harness-owned directory
+ * (`.claude/`, `.cursor/`, ...) so it is never mistaken for engine/plugin
+ * content and never wiped by an engine replace (`placeEngine` below).
+ */
+const MARKERS_DIR = '.aidlc-fleet-markers';
+
+/**
+ * B: what `installedState.read()` actually verifies against current disk
+ * content. `contentHash`/`files` are computed from the real,
+ * just-extracted file tree at `placeEngine`/`placeProjection` time — never
+ * copied from the Lockfile — so a later out-of-band edit or deletion under
+ * `files` changes the recomputed hash and is caught by
+ * {@link verifyInstalledRef} on the next read (this is what makes
+ * `DriftDetector`'s `local-modification` branch reachable at all: before
+ * this fix, `installedEngineRef` was written once, inside `saveLockfile`,
+ * as a bare echo of `lockfile.engine.ref`, so disk could never disagree
+ * with it in `DriftDetector`'s eyes even after real files were altered).
+ */
+interface InstallMarker {
+  /** The engine/plugin channel ref this content was extracted for. */
+  ref: string;
+  /** sha256 over the sorted (relative path, content) pairs of `files`. */
+  contentHash: string;
+  /** Relative (posix-joined via `join`, so platform-native) paths, under the target directory, that this hash covers. */
+  files: string[];
+}
+
+function markerPath(projectRoot: string, key: string): string {
+  return join(projectRoot, MARKERS_DIR, `${key}.json`);
+}
+
+async function writeInstallMarker(
+  projectRoot: string,
+  key: string,
+  marker: InstallMarker,
+): Promise<void> {
+  await mkdir(join(projectRoot, MARKERS_DIR), { recursive: true });
+  await writeFile(markerPath(projectRoot, key), JSON.stringify(marker, null, 2), 'utf8');
+}
+
+async function readInstallMarker(
+  projectRoot: string,
+  key: string,
+): Promise<InstallMarker | undefined> {
+  try {
+    const raw = await readFile(markerPath(projectRoot, key), 'utf8');
+    return JSON.parse(raw) as InstallMarker;
+  } catch {
+    return undefined;
+  }
+}
+
+async function deleteInstallMarker(projectRoot: string, key: string): Promise<void> {
+  await rm(markerPath(projectRoot, key), { force: true });
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Every file (not directory) under `dir`, as `/`-joined paths relative to `dir`, sorted. Pure disk read, no hashing. */
+async function listFilesRecursive(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(current: string, rel: string): Promise<void> {
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(join(current, entry.name), entryRel);
+      } else if (entry.isFile()) {
+        out.push(entryRel);
+      }
+    }
+  }
+  await walk(dir, '');
+  out.sort();
+  return out;
+}
+
+/**
+ * sha256 over `relFiles` (sorted, so file order never affects the digest)
+ * resolved against `baseDir` — the actual bytes on disk right now, read
+ * fresh on every call. A missing file throws (ENOENT from `readFile`),
+ * which callers treat as "content changed" (deletion is a change).
+ */
+async function hashFiles(baseDir: string, relFiles: string[]): Promise<string> {
+  const hash = createHash('sha256');
+  for (const rel of [...relFiles].sort()) {
+    hash.update(rel);
+    hash.update('\0');
+    hash.update(await readFile(join(baseDir, rel)));
+  }
+  return hash.digest('hex');
+}
+
+/**
+ * B's read-time verification: re-derive "is `ref` still actually
+ * installed at `baseDir`" from current disk content, instead of trusting
+ * a stored label. Returns `ref` only when every recorded file is still
+ * present with unchanged content; otherwise `''` (the same "nothing
+ * installed" value `DriftDetector` already treats as never matching a
+ * real Lockfile ref), so a manual edit or deletion under `baseDir` is
+ * indistinguishable, to the caller, from the marker never having existed.
+ */
+async function verifyInstalledRef(
+  projectRoot: string,
+  key: string,
+  baseDir: string,
+): Promise<string> {
+  const marker = await readInstallMarker(projectRoot, key);
+  if (!marker) return '';
+  try {
+    const currentHash = await hashFiles(baseDir, marker.files);
+    return currentHash === marker.contentHash ? marker.ref : '';
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -135,19 +257,6 @@ export function buildTarballUrl(repo: string, ref: string): string {
     throw new Error('real-deps: cannot build a tarball URL without a repo (owner/name)');
   }
   return `https://codeload.github.com/${repo}/tar.gz/${ref}`;
-}
-
-async function readInstalledState(projectRoot: string): Promise<InstalledStateFile> {
-  try {
-    const raw = await readFile(join(projectRoot, INSTALLED_STATE_FILE), 'utf8');
-    return JSON.parse(raw) as InstalledStateFile;
-  } catch {
-    return { engineRef: '', pluginRefs: {} };
-  }
-}
-
-async function writeInstalledState(projectRoot: string, state: InstalledStateFile): Promise<void> {
-  await writeFile(join(projectRoot, INSTALLED_STATE_FILE), JSON.stringify(state, null, 2), 'utf8');
 }
 
 async function runComposeCommand(
@@ -303,14 +412,74 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const engineDir = join(config.projectRoot, resolveHarnessRoot(opts.harness));
       await guard.checkEngineDirectoryReplace(engineDir, opts);
     },
-    placeEngine: async (bytes, harness) => {
+    // A: actually extract the verified engine tarball (mirrors
+    // `placeProjection`'s pattern below) instead of writing its raw bytes
+    // to a `.engine-<harness>.tar` file nothing ever reads. Extract fully
+    // into an isolated staging directory first; only once that succeeds
+    // completely does it replace the live harness directory via `rm` +
+    // `rename`, so a failed/corrupt tarball leaves the previous install
+    // (if any) completely untouched, same failure-safety property
+    // `placeProjection` already has for plugins.
+    placeEngine: async (bytes, harness, ref) => {
       const engineDir = join(config.projectRoot, resolveHarnessRoot(harness));
-      await mkdir(engineDir, { recursive: true });
-      // Actual tarball extraction/install.ts wrapping is upstream's job
-      // (never reimplemented here, project.md's Forbidden rule); this
-      // writes the verified bytes to a staging path for the configured
-      // compose command to consume.
-      await writeFile(join(engineDir, `.engine-${harness}.tar`), bytes);
+      const stagingDir = join(config.projectRoot, `.staging-engine-${harness}-${randomUUID()}`);
+      await mkdir(stagingDir, { recursive: true });
+      try {
+        await extractTarGz(bytes, stagingDir);
+      } catch (cause) {
+        await rm(stagingDir, { recursive: true, force: true });
+        throw cause;
+      }
+
+      // B: hash exactly what the engine tarball produced, before folding
+      // in subtrees `PluginManager` owns independently of the engine
+      // channel (see the preservation step just below) — those change on
+      // their own schedule and must never register as engine drift.
+      const engineFiles = await listFilesRecursive(stagingDir);
+      const contentHash = await hashFiles(stagingDir, engineFiles);
+
+      // code-review finding: unlike the plugin write path (`checkWriteAllowed`
+      // below), this destructive rm+rename previously had no symlink check of
+      // its own — `checkEngineDirectoryReplace` only enforces BR2.1
+      // (force+backup), never BR2.4 (no write through a symlink). A
+      // symlinked `engineDir` would have this rm/rename operate through it.
+      // Reuses `checkWriteAllowed` rather than duplicating the ancestor-walk
+      // logic that already lives in `FileOwnershipGuard`.
+      await guard.checkWriteAllowed(engineDir, { isInitialSeedCopy: false });
+
+      // Preserve plugin-owned state across an engine replace:
+      // `PluginManager` writes `<engineDir>/plugins/*` and the generated
+      // `<engineDir>/hooks/session-start.sh` independently of the engine
+      // channel; an engine update must not silently destroy
+      // already-installed plugins just because they live under the same
+      // harness-root directory the engine tarball also owns.
+      //
+      // code-review finding: `cp(existing, ..., { recursive: true })`
+      // dereferences symlinks by default — if `existing` were a symlink, this
+      // would silently copy whatever it points at into the new live engine
+      // tree. `lstat` (not `stat`) so a symlink itself is detected rather
+      // than resolved.
+      for (const preserved of ['plugins', 'hooks']) {
+        const existing = join(engineDir, preserved);
+        if (await pathExists(existing)) {
+          if ((await lstat(existing)).isSymbolicLink()) {
+            throw new FileOwnershipViolation(
+              `refusing to preserve ${existing} across an engine replace: it is a symlink; no write ever passes through a symlink`,
+            );
+          }
+          await rm(join(stagingDir, preserved), { recursive: true, force: true });
+          await cp(existing, join(stagingDir, preserved), { recursive: true });
+        }
+      }
+
+      await rm(engineDir, { recursive: true, force: true });
+      await rename(stagingDir, engineDir);
+
+      await writeInstallMarker(config.projectRoot, `engine-${harness}`, {
+        ref,
+        contentHash,
+        files: engineFiles,
+      });
     },
     runCompose: async (env) => {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);
@@ -325,11 +494,11 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
         return undefined;
       }
     },
-    saveLockfile: async (lockfile) => {
-      await lockfileStore.save(lockfile);
-      const state = await readInstalledState(config.projectRoot);
-      await writeInstalledState(config.projectRoot, { ...state, engineRef: lockfile.engine.ref });
-    },
+    // B: no longer echoes `engine.ref` into a side "installed state" file
+    // here — `installedState.read()` now derives its answer from the
+    // post-extraction marker `placeEngine` writes above, verified live
+    // against disk on every read.
+    saveLockfile: (lockfile) => lockfileStore.save(lockfile),
   });
 
   const pluginManager = new PluginManager({
@@ -356,12 +525,10 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       );
     },
     loadLockfile: () => lockfileStore.load(),
-    saveLockfile: async (lockfile) => {
-      await lockfileStore.save(lockfile);
-      const state = await readInstalledState(config.projectRoot);
-      const pluginRefs = Object.fromEntries(lockfile.plugins.map((p) => [p.name, p.ref]));
-      await writeInstalledState(config.projectRoot, { ...state, pluginRefs });
-    },
+    // B: same rationale as the engine's saveLockfile above — plugin
+    // "installed" state is derived from `placeProjection`'s marker, not
+    // echoed here.
+    saveLockfile: (lockfile) => lockfileStore.save(lockfile),
     removeProjection: async (name) => {
       // FR2.1: recursively removes the entire extracted plugin tree.
       // Used directly by PluginManager.remove(); PluginManager.add()'s
@@ -376,8 +543,9 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
         recursive: true,
         force: true,
       });
+      await deleteInstallMarker(config.projectRoot, `plugin-${name}`);
     },
-    placeProjection: async (name, bytes) => {
+    placeProjection: async (name, bytes, ref) => {
       // issue #5 (FR1.1): actually extract the verified gzip'd tar bytes
       // into a readable file tree, instead of writing the raw archive
       // bytes to `.projection.tar` (the original bug — upstream compose
@@ -413,6 +581,12 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       }
       await rm(targetDir, { recursive: true, force: true });
       await rename(stagingDir, targetDir);
+
+      // B: record a post-extraction marker from the real, just-placed
+      // file tree (same mechanism as `placeEngine` above).
+      const files = await listFilesRecursive(targetDir);
+      const contentHash = await hashFiles(targetDir, files);
+      await writeInstallMarker(config.projectRoot, `plugin-${name}`, { ref, contentHash, files });
     },
     runCompose: async (env) => {
       const { exitCode } = await runComposeCommand(config.composeCommand, env);
@@ -457,9 +631,43 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
     driftDetector: new DriftDetector(),
     successVerifier,
     installedState: {
+      // B: derives its answer from the real, post-extraction markers
+      // `placeEngine`/`placeProjection` write, re-verified against
+      // current disk content on every call — never from a value copied
+      // out of the Lockfile at save time (issue: `installedEngineRef`
+      // used to be a bare echo of `lockfile.engine.ref`, so
+      // `DriftDetector`'s `local-modification` branch could structurally
+      // never fire).
       read: async () => {
-        const state = await readInstalledState(config.projectRoot);
-        return { installedEngineRef: state.engineRef, installedPluginRefs: state.pluginRefs };
+        let lockfile: Lockfile;
+        try {
+          lockfile = await lockfileStore.load();
+        } catch {
+          // No Lockfile yet — nothing to compare disk against.
+          return { installedEngineRef: '', installedPluginRefs: {} };
+        }
+        let harnessRoot: string;
+        try {
+          harnessRoot = resolveHarnessRoot(lockfile.engine.harness);
+        } catch {
+          return { installedEngineRef: '', installedPluginRefs: {} };
+        }
+        const engineDir = join(config.projectRoot, harnessRoot);
+        const installedEngineRef = await verifyInstalledRef(
+          config.projectRoot,
+          `engine-${lockfile.engine.harness}`,
+          engineDir,
+        );
+        const installedPluginRefs: Record<string, string> = {};
+        for (const plugin of lockfile.plugins) {
+          const pluginDir = join(config.projectRoot, harnessRoot, 'plugins', plugin.name);
+          installedPluginRefs[plugin.name] = await verifyInstalledRef(
+            config.projectRoot,
+            `plugin-${plugin.name}`,
+            pluginDir,
+          );
+        }
+        return { installedEngineRef, installedPluginRefs };
       },
     },
     doctorRunner: {

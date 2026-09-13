@@ -174,7 +174,11 @@ describe('runCli — end-to-end through the real bin.ts wiring', () => {
 
   async function setUp() {
     projectRoot = await mkdtemp(join(tmpdir(), 'aidlc-fleet-cli-'));
-    const engineBytes = new TextEncoder().encode('opaque-engine-tarball-bytes');
+    // A real gzip'd tarball, not opaque bytes: `placeEngine` now actually
+    // extracts the engine tarball (see `real-deps.ts`), so a fake byte
+    // string that isn't valid gzip would fail extraction before `runCli`
+    // ever gets to the behavior these tests exercise.
+    const engineBytes = buildPluginGzipTarball('sample-engine-engine-ref');
     const engineSha256 = createHash('sha256').update(engineBytes).digest('hex');
     const pluginBytes = buildPluginGzipTarball('sample-plugin-plugin-ref');
     const pluginSha256 = createHash('sha256').update(pluginBytes).digest('hex');

@@ -513,8 +513,15 @@ describe('buildRealDeps() — remaining port coverage', () => {
     };
   }
 
-  test('engineInstaller.install() drives placeEngine/checkEngineDirectoryReplace/runCompose/loadLockfile/saveLockfile end-to-end', async () => {
-    const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+  test('engineInstaller.install() drives placeEngine/checkEngineDirectoryReplace/runCompose/loadLockfile/saveLockfile end-to-end (実際に tarball を展開する)', async () => {
+    const tarballBytes = buildPluginGzipTarball([
+      { name: 'aidlc-workflows-engine-ref/', typeflag: '5' },
+      {
+        name: 'aidlc-workflows-engine-ref/engine-marker.txt',
+        typeflag: '0',
+        content: 'engine-content-v1',
+      },
+    ]);
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
     const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
@@ -544,17 +551,176 @@ describe('buildRealDeps() — remaining port coverage', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         'https://codeload.github.com/awslabs/aidlc-workflows/tar.gz/engine-ref',
       );
-      // placeEngine wrote the staged tarball bytes.
-      const staged = await readFile(join(projectRoot, '.claude', '.engine-claude.tar'));
-      expect(new Uint8Array(staged)).toEqual(tarballBytes);
-      // saveLockfile persisted the lockfile AND updated installed-state (engineRef).
+      // A: the engine tarball is now actually EXTRACTED — a real, readable
+      // file exists, with the GitHub codeload wrapper directory stripped —
+      // no more raw `.engine-claude.tar` bytes sitting unread.
+      const marker = await readFile(join(projectRoot, '.claude', 'engine-marker.txt'), 'utf8');
+      expect(marker).toBe('engine-content-v1');
+      await expect(
+        readFile(join(projectRoot, '.claude', '.engine-claude.tar')),
+      ).rejects.toThrow();
+      // saveLockfile persisted the lockfile.
       const lockfileRaw = await readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8');
       expect(JSON.parse(lockfileRaw).engine.ref).toBe('engine-ref');
-      const installedStateRaw = await readFile(
-        join(projectRoot, '.aidlc-fleet-installed.json'),
+      // B: installedState.read() reflects the real, just-extracted disk
+      // content — not an echo of the Lockfile write.
+      const installed = await deps.installedState.read();
+      expect(installed.installedEngineRef).toBe('engine-ref');
+    } finally {
+      restoreFetch();
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * `placeEngine`'s staging-then-swap replace touches the whole harness
+   * root (e.g. `.claude/`), which is also where `PluginManager` writes
+   * `plugins/<name>` and the generated `hooks/session-start.sh` —
+   * independently of the engine channel. Without explicit preservation, a
+   * later `update` would silently wipe every already-installed plugin
+   * just because it lives under the same directory the engine tarball
+   * also owns. This drives that against the real filesystem: install the
+   * engine, add a plugin, then reinstall (update) the engine with a
+   * different tarball, and confirm the plugin's files and its
+   * installed-state marker both survive untouched.
+   */
+  test('engineInstaller.install() preserves an already-installed plugin across an engine re-install', async () => {
+    const engineV1 = buildPluginGzipTarball([
+      { name: 'engine-wrapper-engine-ref/', typeflag: '5' },
+      { name: 'engine-wrapper-engine-ref/marker.txt', typeflag: '0', content: 'engine-v1' },
+    ]);
+    const engineV2 = buildPluginGzipTarball([
+      { name: 'engine-wrapper-engine-ref-2/', typeflag: '5' },
+      { name: 'engine-wrapper-engine-ref-2/marker.txt', typeflag: '0', content: 'engine-v2' },
+    ]);
+    const pluginTarball = buildPluginGzipTarball([
+      { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+      {
+        name: 'example-plugin-plugin-ref/plugin.json',
+        typeflag: '0',
+        content: '{"name":"example-plugin"}',
+      },
+    ]);
+    const engineV1Sha = createHash('sha256').update(engineV1).digest('hex');
+    const engineV2Sha = createHash('sha256').update(engineV2).digest('hex');
+    const pluginSha = createHash('sha256').update(pluginTarball).digest('hex');
+
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      const child = new FakeChild();
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const originalFetch = globalThis.fetch;
+    let engineFetchCount = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('example-plugin')) {
+        return new Response(new Uint8Array(pluginTarball).buffer as ArrayBuffer, { status: 200 });
+      }
+      engineFetchCount += 1;
+      const bytes = engineFetchCount === 1 ? engineV1 : engineV2;
+      return new Response(new Uint8Array(bytes).buffer as ArrayBuffer, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+      });
+
+      await deps.engineInstaller.install(
+        {
+          repo: 'awslabs/aidlc-workflows',
+          ref: 'engine-ref',
+          version: '0.1.0',
+          tag: null,
+          sha256: engineV1Sha,
+        },
+        { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+      );
+      await deps.pluginManager.add({
+        name: 'example-plugin',
+        repo: 'org/example-plugin',
+        ref: 'plugin-ref',
+        version: '1.0.0',
+        sha256: pluginSha,
+      });
+
+      const updateResult = await deps.engineInstaller.install(
+        {
+          repo: 'awslabs/aidlc-workflows',
+          ref: 'engine-ref-2',
+          version: '0.2.0',
+          tag: null,
+          sha256: engineV2Sha,
+        },
+        { harness: 'claude', force: true, isFirstInit: false, adopt: false },
+      );
+      expect(updateResult.success).toBe(true);
+
+      // The new engine content is in place...
+      const marker = await readFile(join(projectRoot, '.claude', 'marker.txt'), 'utf8');
+      expect(marker).toBe('engine-v2');
+      // ...and the plugin, which the engine tarball never mentioned,
+      // survived the swap untouched.
+      const pluginJson = await readFile(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin', 'plugin.json'),
         'utf8',
       );
-      expect(JSON.parse(installedStateRaw).engineRef).toBe('engine-ref');
+      expect(pluginJson).toBe('{"name":"example-plugin"}');
+      const installed = await deps.installedState.read();
+      expect(installed.installedPluginRefs['example-plugin']).toBe('plugin-ref');
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * C: a genuine extraction failure must reject `install()` before
+   * `runCompose` (the unrelated adaptive-workflow-composer entry point,
+   * per this fix's investigation) is ever invoked — success can no longer
+   * hinge on `runCompose`'s exit code, which is meaningless for "did the
+   * engine actually get placed." `placeEngine`'s staging-first design
+   * throws before touching the live engine directory or calling
+   * `runCompose`; this test drives that against the real filesystem with
+   * a genuinely corrupt gzip payload and asserts (1) `install()` rejects
+   * rather than resolving `{ success: true }`, (2) `runCompose` was never
+   * called, and (3) no Lockfile was written.
+   */
+  test('C: a corrupt engine tarball makes engineInstaller.install() reject without ever calling runCompose or writing the Lockfile', async () => {
+    const corruptBytes = new TextEncoder().encode('not a real gzip tarball at all');
+    const sha256 = createHash('sha256').update(corruptBytes).digest('hex');
+    const { spawnMock, restoreFetch } = installEnvironmentMocks(corruptBytes);
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+        doctorCommand: ['doctor-bin'],
+        engineRepo: 'awslabs/aidlc-workflows',
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          { repo: 'awslabs/aidlc-workflows', ref: 'engine-ref', version: '0.1.0', tag: null, sha256 },
+          { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow(/gunzip/);
+
+      expect(spawnMock).not.toHaveBeenCalled();
+      await expect(readFile(join(projectRoot, 'aidlc.lock.json'), 'utf8')).rejects.toThrow();
+      // The previously-existing (empty) .claude/ directory is untouched —
+      // no partial staging leftovers either.
+      const entries = await readdir(projectRoot);
+      expect(entries.filter((e) => e.startsWith('.staging-'))).toEqual([]);
     } finally {
       restoreFetch();
       await rm(projectRoot, { recursive: true, force: true });
@@ -569,7 +735,10 @@ describe('buildRealDeps() — remaining port coverage', () => {
    * the one central Channel file, no per-project env var).
    */
   test('engineInstaller.install() falls back to the Channel-declared engine.repo when no AIDLC_FLEET_ENGINE_REPO override is configured', async () => {
-    const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+    const tarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper-engine-ref/', typeflag: '5' },
+      { name: 'engine-wrapper-engine-ref/marker.txt', typeflag: '0', content: 'engine-content' },
+    ]);
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
     const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
@@ -606,7 +775,10 @@ describe('buildRealDeps() — remaining port coverage', () => {
    * fork before the Channel is updated to point at it).
    */
   test('engineInstaller.install() prefers the AIDLC_FLEET_ENGINE_REPO override over the Channel-declared engine.repo when both are present', async () => {
-    const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+    const tarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper-engine-ref/', typeflag: '5' },
+      { name: 'engine-wrapper-engine-ref/marker.txt', typeflag: '0', content: 'engine-content' },
+    ]);
     const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
     const { fetchMock, restoreFetch } = installEnvironmentMocks(tarballBytes);
     const projectRoot = await makeEmptyProjectRoot();
@@ -726,11 +898,10 @@ describe('buildRealDeps() — remaining port coverage', () => {
         'utf8',
       );
       expect(hook).toContain('BEGIN example-plugin');
-      const installedStateRaw = await readFile(
-        join(projectRoot, '.aidlc-fleet-installed.json'),
-        'utf8',
-      );
-      expect(JSON.parse(installedStateRaw).pluginRefs['example-plugin']).toBe('plugin-ref');
+      // B: installedState.read() reflects the real, just-extracted disk
+      // content — not an echo of the Lockfile write.
+      const installed = await deps.installedState.read();
+      expect(installed.installedPluginRefs['example-plugin']).toBe('plugin-ref');
     } finally {
       restoreFetch();
       await rm(projectRoot, { recursive: true, force: true });
@@ -1120,14 +1291,16 @@ describe('buildRealDeps() — remaining port coverage', () => {
     }
   });
 
-  test('installedState.read() reflects the on-disk installed-state marker', async () => {
+  /**
+   * B: `installedState.read()` must derive its answer by re-verifying
+   * current disk content against the marker `placeEngine`/`placeProjection`
+   * wrote at extraction time — not by reading a static file back verbatim.
+   * With nothing installed yet, there is no marker to verify, so it must
+   * report "not installed" rather than throwing or fabricating a match.
+   */
+  test('installedState.read() reports nothing installed when no engine/plugin has ever been placed', async () => {
     const projectRoot = await makeEmptyProjectRoot();
     try {
-      await writeFile(
-        join(projectRoot, '.aidlc-fleet-installed.json'),
-        JSON.stringify({ engineRef: 'engine-ref', pluginRefs: { foo: 'foo-ref' } }),
-        'utf8',
-      );
       const { buildRealDeps } = await import('./real-deps');
       const deps = buildRealDeps({
         projectRoot,
@@ -1135,9 +1308,275 @@ describe('buildRealDeps() — remaining port coverage', () => {
         composeCommand: ['compose-bin'],
       });
       const state = await deps.installedState.read();
-      expect(state.installedEngineRef).toBe('engine-ref');
-      expect(state.installedPluginRefs).toEqual({ foo: 'foo-ref' });
+      expect(state.installedEngineRef).toBe('');
+      expect(state.installedPluginRefs).toEqual({});
     } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * B's core regression test: prove `installedState.read()` reflects real
+   * disk content, not a value copied from the Lockfile. Before this fix,
+   * `installedEngineRef`/`installedPluginRefs` were written once (inside
+   * `saveLockfile`) as a bare echo of `lockfile.engine.ref`/
+   * `lockfile.plugins[].ref` — disk could never disagree with that echo,
+   * so `DriftDetector`'s `local-modification` branch (BR5.1) was
+   * structurally unreachable. This test installs an engine and a plugin
+   * for real, hand-edits a file inside each on disk (simulating someone
+   * touching the installed tree outside this CLI), and confirms
+   * `installedState.read()` now disagrees with the Lockfile — and that
+   * `check`'s own `DriftDetector.compare()` call reports
+   * `local-modification` (exit code 2) as a result, with `DriftDetector`'s
+   * own comparison logic untouched.
+   */
+  test('B: mutating an installed file on disk after a successful install makes installedState.read()/check report local-modification', async () => {
+    const engineTarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper-engine-ref/', typeflag: '5' },
+      { name: 'engine-wrapper-engine-ref/marker.txt', typeflag: '0', content: 'engine-content-v1' },
+    ]);
+    const engineSha256 = createHash('sha256').update(engineTarballBytes).digest('hex');
+    const pluginTarballBytes = buildPluginGzipTarball([
+      { name: 'example-plugin-plugin-ref/', typeflag: '5' },
+      {
+        name: 'example-plugin-plugin-ref/plugin.json',
+        typeflag: '0',
+        content: '{"name":"example-plugin"}',
+      },
+    ]);
+    const pluginSha256 = createHash('sha256').update(pluginTarballBytes).digest('hex');
+
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      const child = new FakeChild();
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes('example-plugin')) {
+        return new Response(new Uint8Array(pluginTarballBytes).buffer as ArrayBuffer, {
+          status: 200,
+        });
+      }
+      return new Response(new Uint8Array(engineTarballBytes).buffer as ArrayBuffer, {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+      });
+
+      const engineResult = await deps.engineInstaller.install(
+        {
+          repo: 'awslabs/aidlc-workflows',
+          ref: 'engine-ref',
+          version: '0.1.0',
+          tag: null,
+          sha256: engineSha256,
+        },
+        { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+      );
+      expect(engineResult.success).toBe(true);
+
+      const pluginResult = await deps.pluginManager.add({
+        name: 'example-plugin',
+        repo: 'org/example-plugin',
+        ref: 'plugin-ref',
+        version: '1.0.0',
+        sha256: pluginSha256,
+      });
+      expect(pluginResult.success).toBe(true);
+
+      // Sanity: right after a clean install, everything reads as installed
+      // and in sync.
+      const beforeMutation = await deps.installedState.read();
+      expect(beforeMutation.installedEngineRef).toBe('engine-ref');
+      expect(beforeMutation.installedPluginRefs['example-plugin']).toBe('plugin-ref');
+
+      const loadedBefore = await deps.lockfileStore.loadClassified();
+      if (loadedBefore.state !== 'present') throw new Error('expected a Lockfile');
+      // A Channel matching exactly what was just installed — constructed
+      // directly rather than fetched, so this test only exercises
+      // installedState.read()/DriftDetector, not ChannelClient/fetch.
+      const channel = {
+        schema: 1,
+        channel: 'stable',
+        engine: {
+          repo: 'awslabs/aidlc-workflows',
+          ref: 'engine-ref',
+          version: '0.1.0',
+          tag: null,
+          sha256: engineSha256,
+        },
+        migration_boundaries: [],
+        plugins: [
+          {
+            name: 'example-plugin',
+            repo: 'org/example-plugin',
+            ref: 'plugin-ref',
+            version: '1.0.0',
+            sha256: pluginSha256,
+          },
+        ],
+      };
+      const driftBefore = deps.driftDetector.compare(loadedBefore.lockfile, channel, beforeMutation);
+      expect(driftBefore.status).toBe('in-sync');
+
+      // Someone edits a file inside the installed engine directory, outside
+      // this CLI's own writes.
+      await writeFile(join(projectRoot, '.claude', 'marker.txt'), 'tampered-content', 'utf8');
+      // ...and inside the installed plugin directory too.
+      await writeFile(
+        join(projectRoot, '.claude', 'plugins', 'example-plugin', 'plugin.json'),
+        '{"name":"tampered"}',
+        'utf8',
+      );
+
+      const afterMutation = await deps.installedState.read();
+      // The core assertion: disk no longer matches what was recorded at
+      // install time, and installedState.read() says so.
+      expect(afterMutation.installedEngineRef).not.toBe('engine-ref');
+      expect(afterMutation.installedPluginRefs['example-plugin']).not.toBe('plugin-ref');
+
+      const loadedAfter = await deps.lockfileStore.loadClassified();
+      if (loadedAfter.state !== 'present') throw new Error('expected a Lockfile');
+      const drift = deps.driftDetector.compare(loadedAfter.lockfile, channel, afterMutation);
+      expect(drift.status).toBe('local-modification');
+      expect(drift.exitCode).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * code-review finding: `placeEngine`'s new destructive rm+rename (added by
+   * this same fix) had no symlink check of its own — `checkEngineDirectoryReplace`
+   * only enforces BR2.1 (force+backup), never BR2.4 (no write through a
+   * symlink), unlike the plugin write path which always goes through
+   * `checkWriteAllowed`. If the harness-owned directory is a symlink, the
+   * rm+rename would operate through it.
+   */
+  test('placeEngine refuses to replace an engine directory that is a symlink', async () => {
+    const engineTarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper/', typeflag: '5' },
+      { name: 'engine-wrapper/marker.txt', typeflag: '0', content: 'v1' },
+    ]);
+    const engineSha256 = createHash('sha256').update(engineTarballBytes).digest('hex');
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      const child = new FakeChild();
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(new Uint8Array(engineTarballBytes).buffer as ArrayBuffer, {
+        status: 200,
+      })) as unknown as typeof fetch;
+
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      const realDir = join(projectRoot, 'outside-the-project');
+      await mkdir(realDir, { recursive: true });
+      // `.claude` itself is a symlink pointing elsewhere.
+      await symlink(realDir, join(projectRoot, '.claude'));
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          {
+            repo: 'awslabs/aidlc-workflows',
+            ref: 'engine-ref',
+            version: '0.1.0',
+            tag: null,
+            sha256: engineSha256,
+          },
+          { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow(/symlink/);
+
+      // The symlink itself must survive untouched — no rm/rename through it.
+      const stillSymlink = await readdir(realDir);
+      expect(stillSymlink).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * code-review finding: the plugin/hooks preservation loop added by this
+   * fix copies `<engineDir>/plugins` and `<engineDir>/hooks` forward via
+   * `cp(existing, ..., { recursive: true })`, which dereferences symlinks by
+   * default. If `existing` had been replaced with a symlink, this would
+   * silently copy whatever it points at into the new live engine tree.
+   */
+  test('placeEngine refuses to preserve a plugins/hooks subtree that is a symlink', async () => {
+    const engineTarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper/', typeflag: '5' },
+      { name: 'engine-wrapper/marker.txt', typeflag: '0', content: 'v2' },
+    ]);
+    const engineSha256 = createHash('sha256').update(engineTarballBytes).digest('hex');
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      const child = new FakeChild();
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(new Uint8Array(engineTarballBytes).buffer as ArrayBuffer, {
+        status: 200,
+      })) as unknown as typeof fetch;
+
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const secretDir = join(projectRoot, 'secret-elsewhere');
+      await mkdir(secretDir, { recursive: true });
+      await writeFile(join(secretDir, 'leaked.txt'), 'should never be copied', 'utf8');
+      // `.claude/plugins` has been replaced with a symlink to an arbitrary
+      // directory outside the engine's own tree.
+      await symlink(secretDir, join(projectRoot, '.claude', 'plugins'));
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          {
+            repo: 'awslabs/aidlc-workflows',
+            ref: 'engine-ref',
+            version: '0.1.0',
+            tag: null,
+            sha256: engineSha256,
+          },
+          { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow(/symlink/);
+
+      expect(await readdir(join(projectRoot, '.claude'))).not.toContain('marker.txt');
+    } finally {
+      globalThis.fetch = originalFetch;
       await rm(projectRoot, { recursive: true, force: true });
     }
   });
@@ -1202,7 +1641,10 @@ describe('buildRealDeps() — remaining port coverage', () => {
     }
 
     test('engineInstaller.install() with harness "cursor" places the engine under .cursor/, not .claude/', async () => {
-      const tarballBytes = new TextEncoder().encode('engine-tarball-bytes');
+      const tarballBytes = buildPluginGzipTarball([
+        { name: 'engine-wrapper-engine-ref/', typeflag: '5' },
+        { name: 'engine-wrapper-engine-ref/marker.txt', typeflag: '0', content: 'engine-content' },
+      ]);
       const sha256 = createHash('sha256').update(tarballBytes).digest('hex');
       const { restoreFetch } = installEnvironmentMocks(tarballBytes);
       const projectRoot = await makeEmptyProjectRoot();
@@ -1223,12 +1665,10 @@ describe('buildRealDeps() — remaining port coverage', () => {
         );
 
         expect(result.success).toBe(true);
-        const staged = await readFile(join(projectRoot, '.cursor', '.engine-cursor.tar'));
-        expect(new Uint8Array(staged)).toEqual(tarballBytes);
+        const marker = await readFile(join(projectRoot, '.cursor', 'marker.txt'), 'utf8');
+        expect(marker).toBe('engine-content');
         // .claude/ must not be touched by a cursor-targeted install.
-        await expect(
-          readFile(join(projectRoot, '.claude', '.engine-cursor.tar')),
-        ).rejects.toThrow();
+        await expect(readFile(join(projectRoot, '.claude', 'marker.txt'))).rejects.toThrow();
       } finally {
         restoreFetch();
         await rm(projectRoot, { recursive: true, force: true });
