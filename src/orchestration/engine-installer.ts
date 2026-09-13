@@ -37,6 +37,15 @@ export interface EngineInstallerPorts {
   /** Re-run upstream compose. */
   runCompose(env: Record<string, string>): Promise<ComposeResult>;
   /**
+   * issue #13: whether a compose command is actually configured. Pure
+   * config lookup (no I/O) so `install()` can fail fast on it before any
+   * fetch or write — `runCompose` always runs, so a missing command used
+   * to throw only after `placeEngine` had already replaced the
+   * engine-owned directory, leaving residue that then tripped
+   * `FileOwnershipGuard`'s no-`--force` check on the very next run.
+   */
+  isComposeConfigured(): boolean;
+  /**
    * `configured` (issue #14): whether a doctor command actually ran.
    * Threaded through to `EngineInstallResult.doctorConfigured` so
    * `init`/`update` can tell "doctor never ran" apart from "doctor ran,
@@ -82,6 +91,16 @@ export class EngineInstaller {
     engine: ChannelEngine,
     options: EngineInstallOptions,
   ): Promise<EngineInstallResult> {
+    // issue #13: fail fast, before any fetch or write, if compose isn't
+    // configured — install() always calls runCompose later, so letting
+    // that be the first place a missing command surfaces means the
+    // engine directory has already been replaced by the time it throws.
+    if (!this.ports.isComposeConfigured()) {
+      throw new Error(
+        'EngineInstaller: no compose command configured (AIDLC_FLEET_COMPOSE_CMD unset) — refusing to fetch or place the engine before compose can run',
+      );
+    }
+
     const bytes = await this.ports.fetchEngineTarball(engine);
 
     // BR2.1-BR2.4: fail fast before any write if the guard refuses.

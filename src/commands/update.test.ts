@@ -215,6 +215,7 @@ describe('runUpdate (CommandLayer)', () => {
         checkEngineDirectoryReplace: async () => {},
         placeEngine: async () => {},
         runCompose: async () => ({ exitCode: 0, dropsFileContent: 'ok\n' }),
+        isComposeConfigured: () => true,
         doctorFailures: async () => ({ failures: [], configured: true }),
         loadLockfile: async () => undefined,
         saveLockfile: async (next) => {

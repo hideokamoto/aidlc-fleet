@@ -65,6 +65,7 @@ function makePorts(overrides: Partial<EngineInstallerPorts> = {}): {
       calls.runCompose.push(env);
       return { exitCode: 0, dropsFileContent: 'ok\n' };
     },
+    isComposeConfigured: () => true,
     doctorFailures: async () => ({ failures: [], configured: true }),
     loadLockfile: async () => lockfile,
     saveLockfile: async (next: Lockfile) => {
@@ -109,6 +110,22 @@ describe('EngineInstaller.install (init)', () => {
       }),
     ).rejects.toThrow();
     expect(calls.placeEngine).toHaveLength(0);
+    expect(calls.saveLockfile).toHaveLength(0);
+  });
+
+  test('issue #13: fails fast, before any fetch/write, when no compose command is configured', async () => {
+    const { ports, calls } = makePorts({ isComposeConfigured: () => false });
+    const installer = new EngineInstaller(ports);
+    await expect(
+      installer.install(channelEngine, {
+        harness: 'claude-code',
+        force: false,
+        isFirstInit: true,
+      }),
+    ).rejects.toThrow(/compose/);
+    expect(calls.checkEngineDirectoryReplace).toHaveLength(0);
+    expect(calls.placeEngine).toHaveLength(0);
+    expect(calls.runCompose).toHaveLength(0);
     expect(calls.saveLockfile).toHaveLength(0);
   });
 
