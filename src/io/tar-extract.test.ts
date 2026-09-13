@@ -132,6 +132,39 @@ describe('parseTar', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.type).toBe('pax-extended');
   });
+
+  /** POSIX.1-2001 pax レコード `<length> <key>=<value>\n` を組み立てる（length は自己参照）。 */
+  function buildPaxRecord(key: string, value: string): string {
+    const suffix = ` ${key}=${value}\n`;
+    let len = suffix.length + 1;
+    for (;;) {
+      const candidate = String(len).length + suffix.length;
+      if (candidate === len) break;
+      len = candidate;
+    }
+    return `${len}${suffix}`;
+  }
+
+  test('pax 拡張ヘッダーの path= 属性を直後の実エントリ名に適用する（ustar 100+155バイトを超える長いパス名の代替経路）', () => {
+    const longPath = `long/${'a'.repeat(120)}/file.txt`;
+    const paxBody = buildPaxRecord('path', longPath);
+    const archive = buildTarArchive([
+      { name: 'PaxHeaders/truncated', typeflag: 'x', content: paxBody },
+      { name: 'truncated-ustar-name.txt', typeflag: '0', content: 'payload' },
+    ]);
+    const entries = parseTar(archive);
+    expect(entries.map((e) => e.name)).toEqual(['PaxHeaders/truncated', longPath]);
+    expect(entries[1]?.type).toBe('file');
+  });
+
+  test('pax 拡張ヘッダーに path= 属性が無い場合は後続エントリ名を上書きしない', () => {
+    const archive = buildTarArchive([
+      { name: 'PaxHeaders/file.txt', typeflag: 'x', content: '30 comment=abc\n' },
+      { name: 'unaffected.txt', typeflag: '0', content: 'payload' },
+    ]);
+    const entries = parseTar(archive);
+    expect(entries.map((e) => e.name)).toEqual(['PaxHeaders/file.txt', 'unaffected.txt']);
+  });
 });
 
 describe('assertSafeEntry — パス検証（FR4.1）', () => {
