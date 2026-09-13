@@ -45,7 +45,14 @@ export interface PluginManagerPorts {
    * partway through extraction never leaves a partial live tree and never
    * loses a working old version (real implementation: `real-deps.ts`).
    */
-  placeProjection(pluginName: string, bytes: Uint8Array): Promise<void>;
+  /**
+   * `ref` (the plugin's channel ref) is threaded through so the real
+   * implementation can record it, alongside a hash of what was actually
+   * extracted, in a post-extraction "installed" marker that
+   * `installedState.read()` re-verifies against current disk content on
+   * every read (see `real-deps.ts`) — not merely echoed from the Lockfile.
+   */
+  placeProjection(pluginName: string, bytes: Uint8Array, ref: string): Promise<void>;
   /** Re-run upstream compose with `AIDLC_PROJECT_DIR` set and stdin closed. */
   runCompose(env: Record<string, string>): Promise<ComposeResult>;
   /** Regenerate the sessionStart hook wrapper's BEGIN/END marker block set to exactly `pluginNames`. */
@@ -92,7 +99,7 @@ export class PluginManager {
     // call here ahead of placement: an explicit pre-removal would delete
     // a working old version before the new one is known-good.
     await this.ports.checkWriteAllowed(this.pluginDirLabel(plugin.name));
-    await this.ports.placeProjection(plugin.name, bytes);
+    await this.ports.placeProjection(plugin.name, bytes, plugin.ref);
 
     const nextPluginNames = [...new Set([...lockfile.plugins.map((p) => p.name), plugin.name])];
     await this.ports.regenerateSessionStartHook(nextPluginNames);

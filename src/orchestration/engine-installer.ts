@@ -24,8 +24,16 @@ export interface EngineInstallerPorts {
   fetchEngineTarball(engine: ChannelEngine): Promise<Uint8Array>;
   /** `EngineInstaller -> FileOwnershipGuard`: enforce invariants during engine placement (BR2.1-BR2.4). Throws on violation. `harness` is threaded through so the caller can resolve the harness-specific engine-owned directory (issue #6) instead of assuming a single hardcoded location. */
   checkEngineDirectoryReplace(opts: { force: boolean; harness: string }): Promise<void>;
-  /** Place the verified engine bytes for `harness` (install.ts wrapper for Cursor, receipt-diff otherwise). */
-  placeEngine(bytes: Uint8Array, harness: string): Promise<void>;
+  /**
+   * Place the verified engine bytes for `harness` (extracts the tarball
+   * and atomically replaces the harness-owned directory — `real-deps.ts`).
+   * `ref` (the engine's channel ref) is threaded through so the real
+   * implementation can record it, alongside a hash of what was actually
+   * extracted, in a post-extraction "installed" marker (issue: engine
+   * placement previously never really extracted anything, so nothing on
+   * disk could ever be verified against the Lockfile's claims).
+   */
+  placeEngine(bytes: Uint8Array, harness: string, ref: string): Promise<void>;
   /** Re-run upstream compose. */
   runCompose(env: Record<string, string>): Promise<ComposeResult>;
   /**
@@ -79,7 +87,13 @@ export class EngineInstaller {
     // BR2.1-BR2.4: fail fast before any write if the guard refuses.
     await this.ports.checkEngineDirectoryReplace({ force: options.force, harness: options.harness });
 
-    await this.ports.placeEngine(bytes, options.harness);
+    // C: a failed extraction throws out of `placeEngine` (mirroring
+    // `placeProjection`'s existing atomic-swap failure mode) and is never
+    // caught here, so `runCompose`/the Lockfile write below are only ever
+    // reached once the engine has genuinely been placed on disk — success
+    // no longer depends on `runCompose`'s exit code to tell "extracted"
+    // apart from "not extracted."
+    await this.ports.placeEngine(bytes, options.harness, engine.ref);
 
     const compose = await this.ports.runCompose({
       AIDLC_PROJECT_DIR: this.ports.projectRoot ?? '',
