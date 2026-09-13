@@ -54,8 +54,10 @@ describe('runDoctor (CommandLayer)', () => {
   test('issue #18: a variable resolved from its built-in default is NOT a doctor failure', async () => {
     const { deps } = makeFakeDeps();
     const result = await runDoctor(deps);
-    // The default fixture leaves ENGINE_REPO/COMPOSE_CMD/DOCTOR_CMD on
-    // their built-in defaults and only sets CHANNEL_URL via env — none of
+    // The default fixture leaves ENGINE_REPO/COMPOSE_CMD on their built-in
+    // defaults and only sets CHANNEL_URL via env; AIDLC_FLEET_DOCTOR_CMD has
+    // no built-in default (issue #19, Problem 2) but is excluded from the
+    // "unset -> failure" check since it is optional by design — none of
     // that should fail doctor on its own.
     expect(result.exitCode).toBe(0);
   });
@@ -100,5 +102,29 @@ describe('runDoctor (CommandLayer)', () => {
     const result = await runDoctor(deps);
     expect(result.exitCode).toBe(0);
     expect(logs.stdout.join('\n')).toContain('doctor: no unaddressed failures.');
+  });
+
+  /**
+   * issue #19 (Problem 2): AIDLC_FLEET_DOCTOR_CMD no longer has a built-in
+   * default (its old default always threw — see env-config-resolver.ts).
+   * An install that leaves it unset, with every other variable configured,
+   * must NOT fail `doctor` on that account alone — it is legitimately
+   * optional, and the "unconfigured" path above already reports it plainly
+   * without failing the command.
+   */
+  test('issue #19: AIDLC_FLEET_DOCTOR_CMD left unset does not, by itself, fail doctor', async () => {
+    const { deps, logs } = makeFakeDeps({
+      envConfig: {
+        AIDLC_FLEET_CHANNEL_URL: 'https://example.test/channel.json',
+        AIDLC_FLEET_ENGINE_REPO: 'org/engine-repo',
+        AIDLC_FLEET_COMPOSE_CMD: 'compose-bin --compose',
+      },
+    });
+    deps.doctorRunner.run = async () => ({ failures: [], configured: false });
+    const result = await runDoctor(deps);
+    expect(result.exitCode).toBe(0);
+    const printed = logs.stdout.join('\n');
+    expect(printed).toContain('AIDLC_FLEET_DOCTOR_CMD: (unset) (unset)');
+    expect(printed).not.toMatch(/AIDLC_FLEET_DOCTOR_CMD is not set/);
   });
 });

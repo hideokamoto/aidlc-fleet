@@ -31,6 +31,31 @@ describe('resolveEnvConfigKey (CoreLogicLayer)', () => {
     });
   });
 
+  /**
+   * issue #19 (Problem 2): `AIDLC_FLEET_DOCTOR_CMD` used to default to `bun
+   * .claude/tools/aidlc-utility.ts doctor` — this repo's OWN self-hosted
+   * workflow-health check, not an upstream `aidlc-workflows` doctor. That
+   * script never supported `--json`/`--quiet` (it only ever emitted a
+   * human-readable, colored, multi-line report meant for a person reading
+   * a Claude Code session). Since `runDoctorCommand` (issue #19 Problem 1
+   * fix) now force-appends `--json` and `parseDoctorOutput` requires the
+   * output to parse as JSON with a `data.failed` array, invoking that
+   * default throws `real-deps: doctor output is not valid JSON` on every
+   * real run — a shipped default that always fails, worse than having none.
+   * There is currently no script vendored in `.claude/tools/`/`.cursor/tools/`
+   * that emits doctor's upstream `--json` contract (upstream's own
+   * `aidlc-doctor.ts` and its ~20k lines of transitive dependencies are not
+   * vendored here — a full vendored-engine version bump, tracked in issue
+   * #19, not a small addition). Until such a script exists, `AIDLC_FLEET_DOCTOR_CMD`
+   * has no working built-in default and must resolve to `unset` unless a
+   * caller supplies their own real value via env or local-config.
+   */
+  test('issue #19: AIDLC_FLEET_DOCTOR_CMD has no built-in default -> unset', () => {
+    const result = resolveEnvConfigKey('AIDLC_FLEET_DOCTOR_CMD', undefined, undefined);
+    expect(result).toEqual({ value: undefined, source: 'unset' });
+    expect(ENV_CONFIG_DEFAULTS.AIDLC_FLEET_DOCTOR_CMD).toBeUndefined();
+  });
+
   test('neither set, variable has no built-in default -> unset', () => {
     const result = resolveEnvConfigKey('AIDLC_FLEET_CHANNEL_URL', undefined, undefined);
     expect(result).toEqual({ value: undefined, source: 'unset' });
@@ -71,7 +96,9 @@ describe('resolveEnvConfig (CoreLogicLayer)', () => {
       source: 'local-config',
     });
     expect(resolved.AIDLC_FLEET_COMPOSE_CMD.source).toBe('default');
-    expect(resolved.AIDLC_FLEET_DOCTOR_CMD.source).toBe('default');
+    // issue #19 (Problem 2): no built-in default exists for the doctor
+    // command — see the dedicated test above for why.
+    expect(resolved.AIDLC_FLEET_DOCTOR_CMD.source).toBe('unset');
   });
 
   test('ignores extra/unknown keys in the local-config object', () => {

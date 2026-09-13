@@ -19,28 +19,38 @@ describe('runConfig (CommandLayer)', () => {
     expect(configSaves).toHaveLength(0);
   });
 
-  test('only channel URL is unset (the other 3 fall back to built-in defaults) -> prompts only for it', async () => {
+  test('only channel URL and doctor command are unset (ENGINE_REPO/COMPOSE_CMD fall back to built-in defaults) -> prompts only for those two', async () => {
     const { deps, promptQuestions, configSaves } = makeFakeDeps({
       envConfig: {},
-      promptAnswers: ['http://answered.example/channel.json'],
+      promptAnswers: ['http://answered.example/channel.json', 'bun my-doctor.ts'],
     });
     await runConfig(deps);
-    expect(promptQuestions).toHaveLength(1);
+    expect(promptQuestions).toHaveLength(2);
     expect(promptQuestions[0]).toContain('AIDLC_FLEET_CHANNEL_URL');
+    expect(promptQuestions[1]).toContain('AIDLC_FLEET_DOCTOR_CMD');
     expect(configSaves).toEqual([
-      { AIDLC_FLEET_CHANNEL_URL: 'http://answered.example/channel.json' },
+      {
+        AIDLC_FLEET_CHANNEL_URL: 'http://answered.example/channel.json',
+        AIDLC_FLEET_DOCTOR_CMD: 'bun my-doctor.ts',
+      },
     ]);
   });
 
-  test('every env var unset -> the 3 defaulted vars never prompt, only channel URL does', async () => {
+  // issue #19 (Problem 2): AIDLC_FLEET_DOCTOR_CMD no longer has a built-in
+  // default (its old default threw on every real invocation), so it is now
+  // prompted for alongside AIDLC_FLEET_CHANNEL_URL whenever both are unset.
+  test('every env var unset -> only the 2 still-defaulted vars (ENGINE_REPO/COMPOSE_CMD) never prompt', async () => {
     const { deps, promptQuestions, configSaves } = makeFakeDeps({
       envConfig: {},
-      promptAnswers: ['http://answered.example/channel.json'],
+      promptAnswers: ['http://answered.example/channel.json', 'bun my-doctor.ts'],
     });
     await runConfig(deps);
-    expect(promptQuestions).toHaveLength(1);
+    expect(promptQuestions).toHaveLength(2);
     expect(configSaves).toHaveLength(1);
-    expect(Object.keys(assertDefined(configSaves[0]))).toEqual(['AIDLC_FLEET_CHANNEL_URL']);
+    expect(Object.keys(assertDefined(configSaves[0])).sort()).toEqual([
+      'AIDLC_FLEET_CHANNEL_URL',
+      'AIDLC_FLEET_DOCTOR_CMD',
+    ]);
   });
 
   test('preserves existing local-config entries for variables not being re-answered', async () => {

@@ -38,7 +38,9 @@ Commands:
 Environment (issue #18: env > project-local .aidlc-fleet.local.json > built-in default > unset):
   AIDLC_FLEET_CHANNEL_URL   Channel declaration URL (required; no built-in default)
   AIDLC_FLEET_COMPOSE_CMD   Upstream compose command, space-separated (default: "bun .claude/tools/aidlc-orchestrate.ts next compose")
-  AIDLC_FLEET_DOCTOR_CMD    Upstream doctor command, space-separated (default: "bun .claude/tools/aidlc-utility.ts doctor")
+  AIDLC_FLEET_DOCTOR_CMD    Upstream doctor command, space-separated (no built-in default — see issue #19: this
+                            repo's vendored engine predates upstream's aidlc-doctor.ts, so there is currently no
+                            real value to default to; doctor checks are simply skipped when unset)
   AIDLC_FLEET_ENGINE_REPO   Optional "owner/name" override for the engine tarball repo (default: the Channel's own declared engine.repo)
 
 Run "aidlc-fleet config" to answer AIDLC_FLEET_CHANNEL_URL once and save it to

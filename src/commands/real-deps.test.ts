@@ -2165,7 +2165,9 @@ describe('buildRealDeps() — remaining port coverage', () => {
         source: 'env',
       });
       expect(resolved.AIDLC_FLEET_COMPOSE_CMD.source).toBe('default');
-      expect(resolved.AIDLC_FLEET_DOCTOR_CMD.source).toBe('default');
+      // issue #19 (Problem 2): AIDLC_FLEET_DOCTOR_CMD has no built-in
+      // default (its old one always threw on invocation).
+      expect(resolved.AIDLC_FLEET_DOCTOR_CMD.source).toBe('unset');
     } finally {
       if (originalChannelUrl === undefined) delete process.env.AIDLC_FLEET_CHANNEL_URL;
       else process.env.AIDLC_FLEET_CHANNEL_URL = originalChannelUrl;

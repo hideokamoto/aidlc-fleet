@@ -6,10 +6,13 @@
  * filesystem or environment, per `team.md`'s mandated command/core-logic/
  * I-O layer separation.
  *
- * Defaults exist only for the 3 variables that have one fixed, correct
+ * Defaults exist only for the variables that have one fixed, correct
  * value for an ordinary self-hosted AI-DLC install (confirmed against
  * this repo's own source — see each entry below); `AIDLC_FLEET_CHANNEL_URL`
  * names a team's own hosted Channel distribution and has no default.
+ *
+ * `AIDLC_FLEET_DOCTOR_CMD` deliberately has NO built-in default (issue #19,
+ * Problem 2) — see `ENV_CONFIG_DEFAULTS` below for why.
  */
 
 export const ENV_CONFIG_KEYS = [
@@ -42,14 +45,30 @@ export type LocalConfigValues = Partial<Record<EnvConfigKey, string>>;
  * bare `'default'` source here is never passed through to
  * `RealDepsConfig.engineRepo`, so this fallback can never shadow the
  * Channel's declared `engine.repo`.
- * `AIDLC_FLEET_COMPOSE_CMD` / `AIDLC_FLEET_DOCTOR_CMD` -> the exact
- * commands `.claude/tools/aidlc.ts`'s own route table dispatches `compose`
- * and `doctor` to for a self-hosted Claude Code install.
+ * `AIDLC_FLEET_COMPOSE_CMD` -> the exact command `.claude/tools/aidlc.ts`'s
+ * own route table dispatches `compose` to for a self-hosted Claude Code
+ * install.
+ *
+ * `AIDLC_FLEET_DOCTOR_CMD` has NO built-in default (issue #19, Problem 2).
+ * It used to default to `bun .claude/tools/aidlc-utility.ts doctor` — the
+ * same route `.claude/tools/aidlc.ts --doctor` dispatches to — but that
+ * script is this repo's own self-hosted *workflow* health check, written
+ * for a person reading a Claude Code session, not upstream
+ * `awslabs/aidlc-workflows`'s `aidlc-doctor.ts` (which this repo's vendored
+ * `.claude/tools/`/`.cursor/tools/` predate and do not carry, along with
+ * ~20k lines of its transitive dependencies — a full vendored-engine
+ * version bump, not a small addition). It never supported `--json`/`--quiet`
+ * and only ever printed a human-readable, colored, multi-line report — so
+ * `runDoctorCommand`'s `--json` contract (issue #19, Problem 1) can never
+ * be satisfied by it: every real invocation of that old default throws
+ * `real-deps: doctor output is not valid JSON`. A default that always
+ * fails is worse than none, so `AIDLC_FLEET_DOCTOR_CMD` resolves to
+ * `unset` unless a project explicitly points it at a real `--json`-capable
+ * doctor script of its own.
  */
 export const ENV_CONFIG_DEFAULTS: Partial<Record<EnvConfigKey, string>> = {
   AIDLC_FLEET_ENGINE_REPO: 'awslabs/aidlc-workflows',
   AIDLC_FLEET_COMPOSE_CMD: 'bun .claude/tools/aidlc-orchestrate.ts next compose',
-  AIDLC_FLEET_DOCTOR_CMD: 'bun .claude/tools/aidlc-utility.ts doctor',
 };
 
 /** Resolve a single variable's value and its source. */
