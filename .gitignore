@@ -24,6 +24,12 @@ dist
 dist-ssr
 *.local
 
+# Per-session scratch git worktrees created by parallel background agents
+# (Agent tool isolation:"worktree"). Each is a full checkout of its own
+# feature branch, cleaned up automatically once the agent finishes; never
+# shared repo state.
+.claude/worktrees/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
