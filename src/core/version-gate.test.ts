@@ -113,6 +113,45 @@ describe('VersionGate', () => {
     );
   });
 
+  test('multiple crossed boundaries: the most severe action wins regardless of declaration order (reject > manual > none)', () => {
+    // Regression for #29: `channel.migration_boundaries` declares `none`
+    // (before 2.0) ahead of `reject` (before 1.5) — declaration order must
+    // not decide which boundary is honored. An update from 1.0 to 3.0
+    // crosses both, and the more restrictive `reject` must be the one
+    // that governs the decision, even with --acknowledge-migration set.
+    const gate = new VersionGate();
+    const channel = makeChannel([
+      { before: '2.0', action: 'none' },
+      { before: '1.5', action: 'reject' },
+    ]);
+    channel.engine.version = '3.0.0';
+    const lockfile = makeLockfile({ engine: { ...makeLockfile().engine, version: '1.0.0' } });
+
+    const decision = gate.classify(lockfile, channel, { acknowledgeMigration: true });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('reject-boundary');
+    expect(decision.crossedBoundary).toEqual({ before: '1.5', action: 'reject' });
+  });
+
+  test('multiple crossed boundaries: manual outranks none when reject is not crossed', () => {
+    const gate = new VersionGate();
+    const channel = makeChannel([
+      { before: '1.2', action: 'none' },
+      { before: '1.5', action: 'manual' },
+    ]);
+    channel.engine.version = '2.0.0';
+    const lockfile = makeLockfile({ engine: { ...makeLockfile().engine, version: '1.0.0' } });
+
+    const withoutAck = gate.classify(lockfile, channel, { acknowledgeMigration: false });
+    expect(withoutAck.allowed).toBe(false);
+    expect(withoutAck.reason).toBe('manual-boundary-unacknowledged');
+    expect(withoutAck.crossedBoundary).toEqual({ before: '1.5', action: 'manual' });
+
+    const withAck = gate.classify(lockfile, channel, { acknowledgeMigration: true });
+    expect(withAck.allowed).toBe(true);
+    expect(withAck.crossedBoundary).toEqual({ before: '1.5', action: 'manual' });
+  });
+
   test('classifyOrThrow does not throw when the gate allows the transition', () => {
     const gate = new VersionGate();
     const channel = makeChannel([]);
