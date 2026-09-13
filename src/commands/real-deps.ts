@@ -18,7 +18,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { ChannelClient } from '../io/channel-client';
@@ -28,7 +28,7 @@ import { LocalConfigStore } from '../io/local-config-store';
 import { VersionGate } from '../core/version-gate';
 import { SuccessVerifier } from '../core/success-verifier';
 import { DriftDetector } from '../core/drift-detector';
-import { FileOwnershipGuard } from '../core/file-ownership-guard';
+import { FileOwnershipGuard, FileOwnershipViolation } from '../core/file-ownership-guard';
 import { ENV_CONFIG_KEYS, resolveEnvConfig } from '../core/env-config-resolver';
 import { EngineInstaller } from '../orchestration/engine-installer';
 import { PluginManager } from '../orchestration/plugin-manager';
@@ -438,15 +438,35 @@ export function buildRealDeps(config: RealDepsConfig): CommandDeps {
       const engineFiles = await listFilesRecursive(stagingDir);
       const contentHash = await hashFiles(stagingDir, engineFiles);
 
+      // code-review finding: unlike the plugin write path (`checkWriteAllowed`
+      // below), this destructive rm+rename previously had no symlink check of
+      // its own — `checkEngineDirectoryReplace` only enforces BR2.1
+      // (force+backup), never BR2.4 (no write through a symlink). A
+      // symlinked `engineDir` would have this rm/rename operate through it.
+      // Reuses `checkWriteAllowed` rather than duplicating the ancestor-walk
+      // logic that already lives in `FileOwnershipGuard`.
+      await guard.checkWriteAllowed(engineDir, { isInitialSeedCopy: false });
+
       // Preserve plugin-owned state across an engine replace:
       // `PluginManager` writes `<engineDir>/plugins/*` and the generated
       // `<engineDir>/hooks/session-start.sh` independently of the engine
       // channel; an engine update must not silently destroy
       // already-installed plugins just because they live under the same
       // harness-root directory the engine tarball also owns.
+      //
+      // code-review finding: `cp(existing, ..., { recursive: true })`
+      // dereferences symlinks by default — if `existing` were a symlink, this
+      // would silently copy whatever it points at into the new live engine
+      // tree. `lstat` (not `stat`) so a symlink itself is detected rather
+      // than resolved.
       for (const preserved of ['plugins', 'hooks']) {
         const existing = join(engineDir, preserved);
         if (await pathExists(existing)) {
+          if ((await lstat(existing)).isSymbolicLink()) {
+            throw new FileOwnershipViolation(
+              `refusing to preserve ${existing} across an engine replace: it is a symlink; no write ever passes through a symlink`,
+            );
+          }
           await rm(join(stagingDir, preserved), { recursive: true, force: true });
           await cp(existing, join(stagingDir, preserved), { recursive: true });
         }

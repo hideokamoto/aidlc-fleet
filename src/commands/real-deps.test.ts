@@ -1457,6 +1457,130 @@ describe('buildRealDeps() — remaining port coverage', () => {
     }
   });
 
+  /**
+   * code-review finding: `placeEngine`'s new destructive rm+rename (added by
+   * this same fix) had no symlink check of its own — `checkEngineDirectoryReplace`
+   * only enforces BR2.1 (force+backup), never BR2.4 (no write through a
+   * symlink), unlike the plugin write path which always goes through
+   * `checkWriteAllowed`. If the harness-owned directory is a symlink, the
+   * rm+rename would operate through it.
+   */
+  test('placeEngine refuses to replace an engine directory that is a symlink', async () => {
+    const engineTarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper/', typeflag: '5' },
+      { name: 'engine-wrapper/marker.txt', typeflag: '0', content: 'v1' },
+    ]);
+    const engineSha256 = createHash('sha256').update(engineTarballBytes).digest('hex');
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      const child = new FakeChild();
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(new Uint8Array(engineTarballBytes).buffer as ArrayBuffer, {
+        status: 200,
+      })) as unknown as typeof fetch;
+
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      const realDir = join(projectRoot, 'outside-the-project');
+      await mkdir(realDir, { recursive: true });
+      // `.claude` itself is a symlink pointing elsewhere.
+      await symlink(realDir, join(projectRoot, '.claude'));
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          {
+            repo: 'awslabs/aidlc-workflows',
+            ref: 'engine-ref',
+            version: '0.1.0',
+            tag: null,
+            sha256: engineSha256,
+          },
+          { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow(/symlink/);
+
+      // The symlink itself must survive untouched — no rm/rename through it.
+      const stillSymlink = await readdir(realDir);
+      expect(stillSymlink).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * code-review finding: the plugin/hooks preservation loop added by this
+   * fix copies `<engineDir>/plugins` and `<engineDir>/hooks` forward via
+   * `cp(existing, ..., { recursive: true })`, which dereferences symlinks by
+   * default. If `existing` had been replaced with a symlink, this would
+   * silently copy whatever it points at into the new live engine tree.
+   */
+  test('placeEngine refuses to preserve a plugins/hooks subtree that is a symlink', async () => {
+    const engineTarballBytes = buildPluginGzipTarball([
+      { name: 'engine-wrapper/', typeflag: '5' },
+      { name: 'engine-wrapper/marker.txt', typeflag: '0', content: 'v2' },
+    ]);
+    const engineSha256 = createHash('sha256').update(engineTarballBytes).digest('hex');
+    const spawnMock = mock((_cmd: string, _args: string[], _opts: unknown) => {
+      const child = new FakeChild();
+      queueMicrotask(() => child.emit('close', 0));
+      return child;
+    });
+    mock.module('node:child_process', () => ({ spawn: spawnMock }));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(new Uint8Array(engineTarballBytes).buffer as ArrayBuffer, {
+        status: 200,
+      })) as unknown as typeof fetch;
+
+    const projectRoot = await makeEmptyProjectRoot();
+    try {
+      await mkdir(join(projectRoot, '.claude'), { recursive: true });
+      const secretDir = join(projectRoot, 'secret-elsewhere');
+      await mkdir(secretDir, { recursive: true });
+      await writeFile(join(secretDir, 'leaked.txt'), 'should never be copied', 'utf8');
+      // `.claude/plugins` has been replaced with a symlink to an arbitrary
+      // directory outside the engine's own tree.
+      await symlink(secretDir, join(projectRoot, '.claude', 'plugins'));
+
+      const { buildRealDeps } = await import('./real-deps');
+      const deps = buildRealDeps({
+        projectRoot,
+        channelUrl: 'https://example.test/channel.json',
+        composeCommand: ['compose-bin'],
+      });
+
+      await expect(
+        deps.engineInstaller.install(
+          {
+            repo: 'awslabs/aidlc-workflows',
+            ref: 'engine-ref',
+            version: '0.1.0',
+            tag: null,
+            sha256: engineSha256,
+          },
+          { harness: 'claude', force: true, isFirstInit: true, adopt: false },
+        ),
+      ).rejects.toThrow(/symlink/);
+
+      expect(await readdir(join(projectRoot, '.claude'))).not.toContain('marker.txt');
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(projectRoot, { recursive: true, force: true });
+    }
+  });
+
   test('doctorRunner.run() shells out to the configured doctor command', async () => {
     class DoctorChild extends EventEmitter {
       stdout = new EventEmitter();
